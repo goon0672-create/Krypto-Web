@@ -1,0 +1,34 @@
+[functions.cmc-prices]
+enabled = true
+verify_jwt = false
+import_map = "./functions/cmc-prices/deno.json"
+entrypoint = "./functions/cmc-prices/index.ts"
+
+[functions.check-entry-alerts]
+enabled = true
+verify_jwt = false
+import_map = "./functions/check-entry-alerts/deno.json"
+entrypoint = "./functions/check-entry-alerts/index.ts"
+
+[functions.cmc-entry]
+enabled = true
+verify_jwt = true
+import_map = "./functions/cmc-entry/deno.json"
+entrypoint = "./functions/cmc-entry/index.ts"
+
+[functions.save-cmc-key]
+enabled = true
+verify_jwt = true
+import_map = "./functions/save-cmc-key/deno.json"
+entrypoint = "./functions/save-cmc-key/index.ts"
+
+[functions.test-push]
+enabled = true
+verify_jwt = true
+import_map = "./functions/test-push/deno.json"
+entrypoint = "./functions/test-push/index.ts"
+
+[functions.send-entry-push]
+verify_jwt = false
+
+
