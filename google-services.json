@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "915575810278",
+    "project_id": "krypto-entry-app",
+    "storage_bucket": "krypto-entry-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:915575810278:android:1b03fbe6131795dce3b327",
+        "android_client_info": {
+          "package_name": "com.anonymous.kryptoapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBTygALGg0EYmxRU8SvBTvrijUp1RowmjY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
