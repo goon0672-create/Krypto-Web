@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const S: any = {
     page: {
@@ -90,10 +91,25 @@ export default function LoginPage() {
     },
 
     err: { color: "tomato", marginTop: 14, fontWeight: 900 },
+    ok: { color: "#22c55e", marginTop: 14, fontWeight: 900 },
+    warn: { color: "#fbbf24", marginTop: 14, fontWeight: 900 },
   };
+
+  function getSiteUrl(): string {
+    // ✅ Fix: nutze PROD-URL aus ENV, nicht "aktuelles Fenster"
+    const envUrl = (process.env.NEXT_PUBLIC_SITE_URL || "").trim().replace(/\/$/, "");
+    if (envUrl) return envUrl;
+
+    // Fallback (lokal ok)
+    if (typeof window !== "undefined") return window.location.origin;
+
+    // sehr selten relevant
+    return "http://localhost:3000";
+  }
 
   async function login() {
     setErr(null);
+    setInfo(null);
     setBusy(true);
 
     const { error } = await supabase.auth.signInWithPassword({
@@ -113,6 +129,7 @@ export default function LoginPage() {
 
   async function register() {
     setErr(null);
+    setInfo(null);
     setBusy(true);
 
     const { error } = await supabase.auth.signUp({
@@ -127,21 +144,24 @@ export default function LoginPage() {
       return;
     }
 
-    setErr("Registrierung erfolgreich. Bitte E-Mail bestätigen.");
+    setInfo("Registrierung erfolgreich. Bitte E-Mail bestätigen.");
   }
 
   async function resetPassword() {
-    if (!email.trim()) {
+    const mail = email.trim();
+    if (!mail) {
       setErr("Bitte zuerst E-Mail eingeben.");
       return;
     }
 
     setBusy(true);
     setErr(null);
+    setInfo(null);
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
+    const base = getSiteUrl();
+    const redirectTo = `${base}/reset-password`;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(mail, { redirectTo });
 
     setBusy(false);
 
@@ -150,7 +170,7 @@ export default function LoginPage() {
       return;
     }
 
-    setErr("Passwort-Reset E-Mail wurde gesendet.");
+    setInfo(`Passwort-Reset E-Mail wurde gesendet. (Redirect: ${redirectTo})`);
   }
 
   return (
@@ -165,6 +185,8 @@ export default function LoginPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="name@mail.com"
+          inputMode="email"
+          autoCapitalize="none"
         />
 
         <div style={S.label}>Passwort</div>
@@ -186,6 +208,7 @@ export default function LoginPage() {
               setEmail("");
               setPassword("");
               setErr(null);
+              setInfo(null);
             }}
           >
             Felder leeren
@@ -193,6 +216,7 @@ export default function LoginPage() {
         </div>
 
         {err && <div style={S.err}>{err}</div>}
+        {info && <div style={info.startsWith("Passwort-Reset") ? S.warn : S.ok}>{info}</div>}
 
         <div style={S.rowButtons}>
           <button style={S.btnPrimary} disabled={busy} onClick={login}>

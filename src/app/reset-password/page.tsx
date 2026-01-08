@@ -10,22 +10,53 @@ export default function ResetPasswordPage() {
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const [ready, setReady] = useState(false); // Session da?
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    // Optional: prüfen, ob eine Session vorhanden ist (Recovery Session)
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
-        // Ohne Session ist der Link vermutlich ungültig/abgelaufen oder Seite direkt geöffnet
+    let cancelled = false;
+
+    async function init() {
+      setErr(null);
+      setMsg("Prüfe Reset-Link…");
+
+      // Supabase kann die Session async setzen (je nach Flow)
+      // -> wir poll-en kurz statt sofort abzubrechen
+      for (let i = 0; i < 10; i++) {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) {
+          if (!cancelled) {
+            setReady(true);
+            setMsg(null);
+          }
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+
+      if (!cancelled) {
+        setReady(false);
+        setMsg(null);
         setErr("Kein gültiger Reset-Link / keine Session. Bitte erneut Reset anfordern.");
       }
-    });
+    }
+
+    init();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function setNewPassword() {
     setErr(null);
     setMsg(null);
+
+    if (!ready) {
+      setErr("Reset-Link ist nicht aktiv. Bitte Reset erneut anfordern.");
+      return;
+    }
 
     if (!pw1 || pw1.length < 6) {
       setErr("Passwort zu kurz (mindestens 6 Zeichen).");
@@ -48,7 +79,7 @@ export default function ResetPasswordPage() {
     }
 
     setMsg("Passwort wurde geändert. Du kannst dich jetzt einloggen.");
-    setTimeout(() => router.replace("/login"), 800);
+    setTimeout(() => router.replace("/login"), 900);
   }
 
   return (
@@ -57,7 +88,10 @@ export default function ResetPasswordPage() {
         <h1 style={{ color: "#fff", fontSize: 28, fontWeight: 900, margin: 0 }}>Neues Passwort</h1>
 
         {err && <div style={{ color: "tomato", fontWeight: 900, marginTop: 12 }}>{err}</div>}
-        {msg && <div style={{ color: "#22c55e", fontWeight: 900, marginTop: 12 }}>{msg}</div>}
+        {msg && <div style={{ color: "#cbd5e1", fontWeight: 900, marginTop: 12 }}>{msg}</div>}
+        {ready && !err && !msg && (
+          <div style={{ color: "#22c55e", fontWeight: 900, marginTop: 12 }}>Reset-Link aktiv</div>
+        )}
 
         <div style={{ marginTop: 14, color: "#cbd5e1", fontWeight: 800 }}>Neues Passwort</div>
         <input
@@ -98,8 +132,17 @@ export default function ResetPasswordPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
           <button
             onClick={setNewPassword}
-            disabled={busy}
-            style={{ background: "#2563eb", border: 0, color: "#fff", fontWeight: 900, padding: "12px 14px", borderRadius: 14, cursor: "pointer" }}
+            disabled={busy || !ready}
+            style={{
+              background: busy || !ready ? "#1e3a8a" : "#2563eb",
+              border: 0,
+              color: "#fff",
+              fontWeight: 900,
+              padding: "12px 14px",
+              borderRadius: 14,
+              cursor: busy || !ready ? "not-allowed" : "pointer",
+              opacity: busy || !ready ? 0.7 : 1,
+            }}
           >
             {busy ? "…" : "Passwort setzen"}
           </button>
