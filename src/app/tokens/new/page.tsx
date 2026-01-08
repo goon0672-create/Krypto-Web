@@ -17,10 +17,10 @@ export default function NewTokenPage() {
   const [busy, setBusy] = useState(false);
 
   const [symbol, setSymbol] = useState("");
-  const [avg, setAvg] = useState("");        // avg_price (Info)
-  const [entry, setEntry] = useState("");    // entry_price (aktiv)
-  const [bestBuy, setBestBuy] = useState(""); // best_buy_price
-  const [exit1, setExit1] = useState("");     // exit1_pct (als Prozent, z.B. 25)
+  const [avg, setAvg] = useState("");
+  const [entry, setEntry] = useState("");
+  const [bestBuy, setBestBuy] = useState("");
+  const [exit1, setExit1] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -29,6 +29,31 @@ export default function NewTokenPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function triggerPriceCalc(sym: string) {
+    // Trigger supabase edge function, damit last_price/last_calc_at gleich gesetzt werden
+    const { data: session } = await supabase.auth.getSession();
+    const jwt = session?.session?.access_token;
+
+    const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/cmc-entry`;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ symbol: sym, lookbackDays: 90, force: true }),
+    });
+
+    // cmc-entry liefert evtl. ok:false, aber DB kann trotzdem aktualisiert worden sein.
+    // Wir werfen nur bei echten HTTP Problemen.
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`cmc-entry HTTP ${res.status} ${txt}`);
+    }
+  }
 
   async function save() {
     setErr(null);
@@ -46,9 +71,7 @@ export default function NewTokenPage() {
 
     setBusy(true);
 
-    // user_id NICHT manuell setzen -> RLS/Trigger/Default sollen greifen
-    // WICHTIG für Option A:
-    // last_calc_at = null (und last_price = null) erzwingt "noch nicht berechnet"
+    // last_calc_at=null / last_price=null ist ok, ABER danach müssen wir calc triggern.
     const payload: any = {
       symbol: sym,
       avg_price: avgNum,
@@ -60,15 +83,30 @@ export default function NewTokenPage() {
       active_entry_label: entryNum != null ? "MANUELL" : null,
     };
 
-    const { error } = await supabase.from("tokens").insert(payload);
-
-    setBusy(false);
+    // Insert + select (damit wir sauber wissen, dass Insert wirklich durch ist)
+    const { data: inserted, error } = await supabase
+      .from("tokens")
+      .insert(payload)
+      .select("id,symbol")
+      .single();
 
     if (error) {
+      setBusy(false);
       setErr(error.message);
       return;
     }
 
+    // Danach Kurs/Trend berechnen (damit Dashboard sofort Live-Wert hat)
+    try {
+      await triggerPriceCalc(sym);
+    } catch (e: any) {
+      // Kein harter Abbruch: Token ist gespeichert, nur Live-Daten fehlen ggf.
+      setErr(`Token gespeichert, aber Kurs-Update fehlgeschlagen: ${String(e?.message ?? e)}`);
+    } finally {
+      setBusy(false);
+    }
+
+    // Dashboard zeigt dann nach Reload den last_price
     router.replace("/dashboard");
   }
 
