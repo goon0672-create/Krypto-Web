@@ -80,15 +80,12 @@ function normClass(s: string | null | undefined) {
     .replace(/\s+/g, " ");
 }
 
-function fgiLabelAndInvestPct(value: number | null | undefined, classification: string | null | undefined) {
+function fgiLabelAndInvestPct(
+  value: number | null | undefined,
+  classification: string | null | undefined
+) {
   const v = typeof value === "number" && Number.isFinite(value) ? value : null;
   const c = normClass(classification);
-
-  // Invest-Logik nach deiner Vorgabe:
-  // Neutral => 25%
-  // Angst => 50-70%
-  // Panik => 100%
-  // Wenn CMC andere Labels liefert, mappen wir robust.
 
   const isPanic =
     c.includes("panic") ||
@@ -122,7 +119,6 @@ function fgiLabelAndInvestPct(value: number | null | undefined, classification: 
     investText = "10%";
     color = "#22c55e";
   } else if (v != null) {
-    // Fallback nur über Wert, wenn Classification fehlt/seltsam ist
     if (v <= 25) {
       phase = "Panik";
       investText = "100%";
@@ -171,7 +167,9 @@ export default function DashboardPage() {
   const [openFgi, setOpenFgi] = useState<Record<string, boolean>>({});
   const [fgiBusy, setFgiBusy] = useState<Record<string, boolean>>({});
   const [fgiErr, setFgiErr] = useState<Record<string, string | null>>({});
-  const [fgiData, setFgiData] = useState<Record<string, { value: number; classification: string } | null>>({});
+  const [fgiData, setFgiData] = useState<
+    Record<string, { value: number; classification: string } | null>
+  >({});
 
   // TOKENS overlay (list)
   const [openTokenList, setOpenTokenList] = useState(false);
@@ -253,14 +251,19 @@ export default function DashboardPage() {
       transition: "box-shadow 220ms ease, border 220ms ease",
     },
 
-    // IMPORTANT FIX: use full border, not borderColor (no mix of shorthand/non-shorthand)
     cardFlash: {
       border: "1px solid rgba(37,99,235,0.85)",
       boxShadow: "0 0 0 2px rgba(37,99,235,0.25), 0 20px 60px rgba(0,0,0,0.35)",
     },
 
     headRow: { display: "flex", gap: 14, alignItems: "center" },
-    dot: { width: 16, height: 16, borderRadius: 999, background: "#22c55e", boxShadow: "0 0 0 6px rgba(34,197,94,0.12)" },
+    dot: {
+      width: 16,
+      height: 16,
+      borderRadius: 999,
+      background: "#22c55e",
+      boxShadow: "0 0 0 6px rgba(34,197,94,0.12)",
+    },
     ok: { color: "#22c55e", fontWeight: 900, fontSize: 20 },
 
     symbol: { color: "#fff", fontSize: 34, fontWeight: 900, marginTop: 2 },
@@ -273,7 +276,6 @@ export default function DashboardPage() {
 
     divider: { height: 1, background: "rgba(148,163,184,0.25)", marginTop: 18, marginBottom: 14 },
 
-    // Buttons area: 2x2 grid like your picture
     btnGrid: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
@@ -287,10 +289,7 @@ export default function DashboardPage() {
       alignItems: "center",
     },
 
-    entryBox: {
-      marginTop: 12,
-      paddingTop: 8,
-    },
+    entryBox: { marginTop: 12, paddingTop: 8 },
     entryTitleRow: {
       display: "flex",
       justifyContent: "space-between",
@@ -332,15 +331,11 @@ export default function DashboardPage() {
       justifySelf: "end",
     },
 
-    fgiBox: {
-      marginTop: 12,
-      paddingTop: 8,
-    },
+    fgiBox: { marginTop: 12, paddingTop: 8 },
     fgiTitle: { color: "#fff", fontSize: 22, fontWeight: 900, margin: 0 },
     fgiRow: { marginTop: 10, color: "#cbd5e1", fontSize: 16, lineHeight: 1.7 },
     fgiValue: { fontWeight: 900, color: "#e2e8f0" },
 
-    // Inline edit form inside card
     formCard: {
       marginTop: 14,
       border: "1px solid rgba(148,163,184,0.25)",
@@ -362,7 +357,6 @@ export default function DashboardPage() {
       fontSize: 16,
     },
 
-    // TOKENS overlay
     overlay: {
       position: "fixed",
       inset: 0,
@@ -373,8 +367,6 @@ export default function DashboardPage() {
       padding: 16,
       zIndex: 50,
     },
-
-    // ✅ SCROLL FIX PART 1: make overlayCard a flex column with maxHeight + minHeight:0
     overlayCard: {
       marginTop: 70,
       width: "min(520px, 100%)",
@@ -389,11 +381,8 @@ export default function DashboardPage() {
       maxHeight: "calc(100vh - 120px)",
       minHeight: 0,
     },
-
     overlayTitleRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 },
     overlayTitle: { color: "#fff", fontSize: 18, fontWeight: 900, margin: 0 },
-
-    // ✅ SCROLL FIX PART 2: tokenList becomes the scroll container
     tokenList: {
       marginTop: 12,
       display: "grid",
@@ -405,7 +394,6 @@ export default function DashboardPage() {
       paddingRight: 4,
       WebkitOverflowScrolling: "touch",
     },
-
     tokenItemBtn: {
       width: "100%",
       backgroundColor: "#0f172a",
@@ -508,13 +496,13 @@ export default function DashboardPage() {
     setSaving(true);
     setErr(null);
 
+    // ✅ updated_at entfernt (Spalte existiert bei dir nicht)
     const payload: any = {
       symbol: sym,
       avg_price: avgN,
       entry_price: entryN,
       best_buy_price: bbN,
       exit1_pct: ex1N,
-      updated_at: new Date().toISOString(),
     };
 
     if (entryN != null) payload.active_entry_label = "MANUELL";
@@ -614,12 +602,12 @@ export default function DashboardPage() {
 
     setEntryErr((p) => ({ ...p, [id]: null }));
 
+    // ✅ updated_at entfernt (Spalte existiert bei dir nicht)
     const res = await supabase
       .from("tokens")
       .update({
         entry_price: pick,
         active_entry_label: which,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", id);
 
@@ -725,8 +713,10 @@ export default function DashboardPage() {
             const live = typeof t.last_price === "number" ? t.last_price : null;
             const bb = typeof t.best_buy_price === "number" ? t.best_buy_price : null;
 
-            const pctAktuell = live != null && bb != null && bb !== 0 ? ((live - bb) / bb) * 100 : null;
-            const pctColor = pctAktuell == null ? "#e2e8f0" : (pctAktuell >= 0 ? "#22c55e" : "#ef4444");
+            const pctAktuell =
+              live != null && bb != null && bb !== 0 ? ((live - bb) / bb) * 100 : null;
+            const pctColor =
+              pctAktuell == null ? "#e2e8f0" : pctAktuell >= 0 ? "#22c55e" : "#ef4444";
 
             const isEntryOpen = !!openEntry[t.id];
             const isFgiOpen = !!openFgi[t.id];
@@ -740,7 +730,9 @@ export default function DashboardPage() {
               <div
                 key={t.id}
                 style={{ ...S.card, ...(isFlash ? S.cardFlash : null) }}
-                ref={(el) => { cardRefs.current[t.id] = el; }}
+                ref={(el) => {
+                  cardRefs.current[t.id] = el;
+                }}
               >
                 <div style={S.symbol}>{t.symbol}</div>
 
@@ -795,16 +787,19 @@ export default function DashboardPage() {
 
                 <div style={S.divider} />
 
-                {/* FGI block (only when open) */}
                 {isFgiOpen && (
                   <div style={S.fgiBox}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <h3 style={S.fgiTitle}>FGI</h3>
-                      <button
-                        style={S.btnMid}
-                        disabled={!!fgiBusy[t.id]}
-                        onClick={() => fetchFgi(t.id)}
-                      >
+                      <button style={S.btnMid} disabled={!!fgiBusy[t.id]} onClick={() => fetchFgi(t.id)}>
                         {fgiBusy[t.id] ? "Lade…" : "Aktualisieren"}
                       </button>
                     </div>
@@ -830,16 +825,11 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {/* Entry Vorschläge block (only when open) */}
                 {isEntryOpen && (
                   <div style={S.entryBox}>
                     <div style={S.entryTitleRow}>
                       <h3 style={S.entryTitle}>Entry-Vorschläge</h3>
-                      <button
-                        style={S.entryRecalcBtn}
-                        disabled={!!entryBusy[t.id]}
-                        onClick={() => recalcEntries(t)}
-                      >
+                      <button style={S.entryRecalcBtn} disabled={!!entryBusy[t.id]} onClick={() => recalcEntries(t)}>
                         {entryBusy[t.id] ? "Berechne…" : "Neu berechnen"}
                       </button>
                     </div>
@@ -870,7 +860,6 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {/* Buttons layout like your picture */}
                 <div style={S.btnGrid}>
                   <button
                     style={{ ...S.btnMid, ...S.btnFull }}
@@ -883,32 +872,22 @@ export default function DashboardPage() {
                       }
                     }}
                   >
-                    {fgiBusy[t.id] ? "FGI…" : (isFgiOpen ? "FGI schließen" : "FGI")}
+                    {fgiBusy[t.id] ? "FGI…" : isFgiOpen ? "FGI schließen" : "FGI"}
                   </button>
 
-                  <button
-                    style={{ ...S.btnPrimary, ...S.btnFull }}
-                    onClick={() => startEditInline(t)}
-                  >
+                  <button style={{ ...S.btnPrimary, ...S.btnFull }} onClick={() => startEditInline(t)}>
                     Bearbeiten
                   </button>
 
-                  <button
-                    style={{ ...S.btnMid, ...S.btnFull }}
-                    onClick={() => toggleEntry(t.id)}
-                  >
+                  <button style={{ ...S.btnMid, ...S.btnFull }} onClick={() => toggleEntry(t.id)}>
                     {isEntryOpen ? "Entry-Vorschläge schließen" : "Entry-Vorschläge"}
                   </button>
 
-                  <button
-                    style={{ ...S.btnDanger, ...S.btnFull }}
-                    onClick={() => deleteToken(t.id, t.symbol)}
-                  >
+                  <button style={{ ...S.btnDanger, ...S.btnFull }} onClick={() => deleteToken(t.id, t.symbol)}>
                     Löschen
                   </button>
                 </div>
 
-                {/* Inline edit form (only for this token) */}
                 {editingId === t.id && (
                   <div style={S.formCard}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -950,28 +929,19 @@ export default function DashboardPage() {
           })}
         </div>
 
-        {/* TOKENS overlay */}
         {openTokenList && (
-          <div
-            style={S.overlay}
-            onClick={() => setOpenTokenList(false)}
-          >
-            <div
-              style={S.overlayCard}
-              onClick={(e) => e.stopPropagation()}
-            >
+          <div style={S.overlay} onClick={() => setOpenTokenList(false)}>
+            <div style={S.overlayCard} onClick={(e) => e.stopPropagation()}>
               <div style={S.overlayTitleRow}>
                 <h3 style={S.overlayTitle}>TOKENS</h3>
-                <button style={S.btnDark} onClick={() => setOpenTokenList(false)}>Schließen</button>
+                <button style={S.btnDark} onClick={() => setOpenTokenList(false)}>
+                  Schließen
+                </button>
               </div>
 
               <div style={S.tokenList}>
                 {sorted.map((t) => (
-                  <button
-                    key={t.id}
-                    style={S.tokenItemBtn}
-                    onClick={() => jumpToToken(t.id)}
-                  >
+                  <button key={t.id} style={S.tokenItemBtn} onClick={() => jumpToToken(t.id)}>
                     {t.symbol}
                   </button>
                 ))}
@@ -979,7 +949,6 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-
       </div>
     </div>
   );
