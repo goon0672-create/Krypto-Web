@@ -28,10 +28,22 @@ export default function LoginPage() {
       maxWidth: 520,
       border: "1px solid #334155",
       borderRadius: 20,
-      padding: 20,
+      padding: 24,
       background: "rgba(255,255,255,0.03)",
       boxSizing: "border-box",
     },
+
+    logoWrap: {
+      display: "flex",
+      justifyContent: "center",
+      marginBottom: 20,
+      marginTop: 6,
+    },
+    logo: {
+      width: 120,
+      height: "auto",
+    },
+
     title: { color: "white", fontSize: 32, fontWeight: 900, margin: 0 },
     sub: { color: "#94a3b8", marginTop: 6, marginBottom: 20 },
 
@@ -96,14 +108,9 @@ export default function LoginPage() {
   };
 
   function getSiteUrl(): string {
-    // ✅ Fix: nutze PROD-URL aus ENV, nicht "aktuelles Fenster"
     const envUrl = (process.env.NEXT_PUBLIC_SITE_URL || "").trim().replace(/\/$/, "");
     if (envUrl) return envUrl;
-
-    // Fallback (lokal ok)
     if (typeof window !== "undefined") return window.location.origin;
-
-    // sehr selten relevant
     return "http://localhost:3000";
   }
 
@@ -170,12 +177,18 @@ export default function LoginPage() {
       return;
     }
 
-    setInfo(`Passwort-Reset E-Mail wurde gesendet. (Redirect: ${redirectTo})`);
+    setInfo("Passwort-Reset E-Mail wurde gesendet.");
   }
 
   return (
     <div style={S.page}>
       <div style={S.card}>
+
+        {/* ✅ LOGO */}
+        <div style={S.logoWrap}>
+          <img src="/login-logo.png" alt="Krypto" style={S.logo} />
+        </div>
+
         <h1 style={S.title}>Krypto Web</h1>
         <div style={S.sub}>Login / Registrierung</div>
 
