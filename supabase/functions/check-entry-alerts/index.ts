@@ -80,6 +80,7 @@ Deno.serve(async (req) => {
         last_entry_push_at,
 
         best_buy_price,
+        exit1_pct,
         best_buy_state,
         last_best_buy_alert_at
         `
@@ -110,7 +111,10 @@ Deno.serve(async (req) => {
     }
 
     if (!pricesRes.ok) {
-      console.error("cmc-prices failed", JSON.stringify({ status: pricesRes.status, body: pricesJson }, null, 2));
+      console.error(
+        "cmc-prices failed",
+        JSON.stringify({ status: pricesRes.status, body: pricesJson }, null, 2)
+      );
       return json({ error: "cmc-prices failed", status: pricesRes.status, body: pricesJson }, 502);
     }
 
@@ -151,7 +155,7 @@ Deno.serve(async (req) => {
     }
 
     // ===== 4) Logic =====
-    const COOLDOWN_HOURS = 4;
+    const COOLDOWN_HOURS = 2;
     const nowIso = new Date().toISOString();
 
     const messages: ExpoPushMessage[] = [];
@@ -210,36 +214,54 @@ Deno.serve(async (req) => {
         });
       }
 
-      /* ---------- BEST BUY +55% ---------- */
+      /* ---------- EXIT1 WINDOW (based on best_buy_price + exit1_pct) ---------- */
       const bb = Number(t.best_buy_price);
-      const bbValid = Number.isFinite(bb) && bb > 0;
-      const threshold = bbValid ? bb * 1.55 : NaN;
-      const bbReached = bbValid ? live >= threshold : false;
+      const exitPct = Number(t.exit1_pct);
+
+      const bbValid =
+        Number.isFinite(bb) && bb > 0 &&
+        Number.isFinite(exitPct) && exitPct > 0;
+
+      const target = bbValid ? bb * (1 + exitPct / 100) : NaN;     // z.B. 1 * (1+1.5) = 2.5
+      const threshold = bbValid ? target / 1.45 : NaN;            // live >= threshold => <=45% bis target
+
+      // in der Zone: threshold ≤ live < target
+      const exitWindowReached = bbValid && live >= threshold && live < target;
 
       // State sync immer
-      if (Boolean(t.best_buy_state) !== bbReached) {
-        tokenUpdates.push({ id: String(t.id), patch: { best_buy_state: bbReached } });
+      if (Boolean(t.best_buy_state) !== exitWindowReached) {
+        tokenUpdates.push({ id: String(t.id), patch: { best_buy_state: exitWindowReached } });
       }
 
-      // Rearm: wenn wieder darunter -> marker löschen
-      if (!bbReached && t.last_best_buy_alert_at) {
+      // Rearm: wenn wieder raus aus der Zone (unter threshold) oder Ziel bereits überschritten
+      if ((!exitWindowReached || live >= target) && t.last_best_buy_alert_at) {
         tokenUpdates.push({ id: String(t.id), patch: { last_best_buy_alert_at: null } });
       }
 
       // Push: nur wenn erlaubt + Device vorhanden + cooldown
-      if (pushAllowed && bbReached && pushTokens.length && isOlderThanHours(t.last_best_buy_alert_at, COOLDOWN_HOURS)) {
+      if (
+        pushAllowed &&
+        exitWindowReached &&
+        pushTokens.length &&
+        isOlderThanHours(t.last_best_buy_alert_at, COOLDOWN_HOURS)
+      ) {
+        const remainingPct = ((target / live) - 1) * 100;
+
         for (const to of pushTokens) {
           messages.push({
             to,
-            title: `Best Buy +55%: ${sym}`,
-            body: `Live ${live} ≥ Ziel ${threshold} (Best Buy ${bb})`,
+            title: `Exit-Zone erreicht: ${sym}`,
+            body: `Noch ${remainingPct.toFixed(1)}% bis Ziel (${target.toFixed(6)})`,
             sound: "default",
             data: {
-              kind: "best_buy_55",
+              kind: "exit1_window",
               symbol: sym,
               live,
               best_buy_price: bb,
+              exit1_pct: exitPct,
+              target,
               threshold,
+              remainingPct,
               token_id: String(t.id),
               at: nowIso,
             },
@@ -251,7 +273,7 @@ Deno.serve(async (req) => {
         pushLog.push({
           user_id: uid,
           token_symbol: sym,
-          kind: "best_buy_55",
+          kind: "exit1_window",
           last_sent_at: nowIso,
           created_at: nowIso,
         });
@@ -291,7 +313,7 @@ Deno.serve(async (req) => {
 
     return json({
       ok: true,
-      checked: tokens.length,
+      checked: (tokens as any[]).length,
       pushed: messages.length,
       updated: tokenUpdates.length,
       cooldownHours: COOLDOWN_HOURS,

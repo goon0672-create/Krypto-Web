@@ -37,8 +37,8 @@ export async function registerAndSavePushDevice(userId: string) {
     });
   }
 
-  // Empfehlung: pro User genau ein Token (überschreibt bei Neuinstallation)
-  const { error } = await supabase
+  // 1) Device speichern (pro User genau 1 Token)
+  const { error: devErr } = await supabase
     .from("push_devices")
     .upsert(
       {
@@ -50,7 +50,26 @@ export async function registerAndSavePushDevice(userId: string) {
       { onConflict: "user_id" }
     );
 
-  if (error) return { ok: false as const, reason: error.message };
+  if (devErr) return { ok: false as const, reason: devErr.message };
+
+  // 2) ✅ Variante B: Default push_prefs anlegen, falls noch nicht vorhanden
+  //    (dadurch ist mode NICHT mehr "off", wenn ein neuer User / neues Gerät sich registriert)
+  const { error: prefErr } = await supabase
+    .from("push_prefs")
+    .upsert(
+      {
+        user_id: userId,
+        mode: "multi", // default
+        times_per_day: 3, // optional
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" }
+    );
+
+  // prefs-fehler nicht hart killen – sonst blockierst du Push-Device Registrierung
+  if (prefErr) {
+    console.warn("push_prefs upsert failed:", prefErr.message);
+  }
 
   return { ok: true as const, expoPushToken };
 }

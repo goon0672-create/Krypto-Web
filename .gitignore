@@ -38,14 +38,14 @@ yarn-error.*
 
 app-example
 
-# generated native folders
+ # generated native folders
 /ios
 /android
 
 # Secrets
 .env
 .env.*
-google-services.json
+# google-services.json
 
 # EAS (opitonal, aber ok)
 .eas/

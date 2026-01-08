@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -51,22 +52,49 @@ function TokenScreen({
   session: any;
   onLogout: () => Promise<void>;
 }) {
+  // Add-Form (Token erfassen) - bleibt fürs Anlegen
   const [symbol, setSymbol] = useState("");
   const [avg, setAvg] = useState("");
   const [entry, setEntry] = useState("");
   const [bestBuy, setBestBuy] = useState("");
-
+  const [exit1Pct, setExit1Pct] = useState("");
 
   const [items, setItems] = useState<any[]>([]);
   const [prices, setPrices] = useState<Record<string, number>>({});
 
+  // ✅ Inline Edit State (für die jeweilige Token-Card)
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{
+    avg: string;
+    entry: string;
+    bestBuy: string;
+    exit1Pct: string;
+  }>({ avg: "", entry: "", bestBuy: "", exit1Pct: "" });
+
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [calcId, setCalcId] = useState<string | null>(null);
 
   // ✅ Eingabe-Formular Toggle (Token erfassen)
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // ✅ Token Picker Modal
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // ✅ Scroll-to-Token
+  const scrollRef = useRef<ScrollView | null>(null);
+  const tokenY = useRef<Record<string, number>>({});
+
+  const jumpToToken = (id: string) => {
+    const y = tokenY.current[id];
+    if (typeof y !== "number") return;
+    setPickerOpen(false);
+
+    // kleiner Delay, damit Modal sauber zu ist
+    setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+    }, 50);
+  };
 
   // Toggles
   const [openAI, setOpenAI] = useState<Record<string, boolean>>({});
@@ -228,7 +256,6 @@ function TokenScreen({
 
   /* =========================
      PUSH REGISTER (1x)
-     -> nutzt lib/push.ts
   ========================= */
 
   useEffect(() => {
@@ -253,120 +280,152 @@ function TokenScreen({
     })();
   }, [session?.user?.id]);
 
- /* =========================
-   Load Data
-========================= */
+  /* =========================
+     Load Data
+  ========================= */
 
-const loadPrices = async (symbols: string[]) => {
-  const unique = Array.from(
-    new Set(symbols.map((s) => String(s ?? "").toUpperCase()))
-  ).filter(Boolean);
+  const loadPrices = async (symbols: string[]) => {
+    const unique = Array.from(
+      new Set(symbols.map((s) => String(s ?? "").toUpperCase()))
+    ).filter(Boolean);
 
-  if (!unique.length) return;
+    if (!unique.length) return;
 
-  const { data, error } = await supabase.functions.invoke("cmc-prices", {
-    body: { symbols: unique },
-  });
+    const { data, error } = await supabase.functions.invoke("cmc-prices", {
+      body: { symbols: unique },
+    });
 
-  if (error) return;
-  if (data) setPrices(data as Record<string, number>);
-};
+    if (error) return;
+    if (data) setPrices(data as Record<string, number>);
+  };
 
-const load = async () => {
-  const { data, error } = await supabase
-    .from("tokens")
-    .select(`
+  const load = async () => {
+    const { data, error } = await supabase.from("tokens").select(`
       id, created_at, user_id,
       symbol, avg_price, entry_price, active_entry_label,
       trend, suggested_week,
       ex1_entry, ex2_entry, ex3_entry,
-      ex1_pct, ex2_pct, ex3_pct, best_buy_price
+      ex1_pct, ex2_pct, ex3_pct, best_buy_price,
+      exit1_pct
     `);
 
-  if (error) {
-    Alert.alert("Fehler", error.message);
-    return;
-  }
+    if (error) {
+      Alert.alert("Fehler", error.message);
+      return;
+    }
 
-  // 🔑 ROBUSTE alphabetische Sortierung (case-insensitiv)
-  const sorted = [...(data ?? [])].sort((a: any, b: any) =>
-    String(a.symbol ?? "")
-      .toUpperCase()
-      .localeCompare(String(b.symbol ?? "").toUpperCase())
-  );
+    const sorted = [...(data ?? [])].sort((a: any, b: any) =>
+      String(a.symbol ?? "")
+        .toUpperCase()
+        .localeCompare(String(b.symbol ?? "").toUpperCase())
+    );
 
-  setItems(sorted);
-  await loadPrices(sorted.map((r: any) => r.symbol));
-};
+    setItems(sorted);
+    await loadPrices(sorted.map((r: any) => r.symbol));
+  };
 
-useEffect(() => {
-  load();
-}, []);
+  useEffect(() => {
+    load();
+  }, []);
 
-const onPullRefresh = async () => {
-  setRefreshing(true);
-  await load();
-  setRefreshing(false);
-};
-
+  const onPullRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
 
   /* =========================
      CRUD
   ========================= */
 
-  const clearForm = () => {
-    setEditingId(null);
+  const clearAddForm = () => {
     setSymbol("");
     setAvg("");
     setEntry("");
     setBestBuy("");
+    setExit1Pct("");
   };
 
-  const addOrUpdate = async () => {
+  const addToken = async () => {
     const s = symbol.trim().toUpperCase();
     if (!s) return Alert.alert("Fehler", "Token fehlt");
 
     const avgN = avg ? toNum(avg) : null;
     const entryN = entry ? toNum(entry) : null;
     const bestBuyN = bestBuy ? toNum(bestBuy) : null;
+    const exit1PctN = exit1Pct ? toNum(exit1Pct) : null;
 
     const payload: any = {
       symbol: s,
       avg_price: avgN,
       entry_price: entryN,
       best_buy_price: bestBuyN,
-};
+      exit1_pct: exit1PctN,
+    };
 
     if (entryN != null) payload.active_entry_label = "MANUELL";
 
     setBusy(true);
-
-    const q = editingId
-      ? supabase.from("tokens").update(payload).eq("id", editingId)
-      : supabase.from("tokens").insert({ user_id: session.user.id, ...payload });
-
-    const { error } = await q;
+    const { error } = await supabase
+      .from("tokens")
+      .insert({ user_id: session.user.id, ...payload });
     setBusy(false);
 
     if (error) return Alert.alert("Fehler", error.message);
 
-    clearForm();
+    clearAddForm();
     setShowAddForm(false);
     await load();
   };
 
   const remove = async (id: string) => {
+    if (editingId === id) {
+      setEditingId(null);
+      setEditDraft({ avg: "", entry: "", bestBuy: "", exit1Pct: "" });
+    }
     await supabase.from("tokens").delete().eq("id", id);
     await load();
   };
 
   const startEdit = (t: any) => {
-    setShowAddForm(true);
     setEditingId(t.id);
-    setSymbol(t.symbol ?? "");
-    setAvg(t.avg_price != null ? String(t.avg_price) : "");
-    setEntry(t.entry_price != null ? String(t.entry_price) : "");
-    setBestBuy(t.best_buy_price != null ? String(t.best_buy_price) : "");
+    setEditDraft({
+      avg: t.avg_price != null ? String(t.avg_price) : "",
+      entry: t.entry_price != null ? String(t.entry_price) : "",
+      bestBuy: t.best_buy_price != null ? String(t.best_buy_price) : "",
+      exit1Pct: t.exit1_pct != null ? String(t.exit1_pct) : "",
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditDraft({ avg: "", entry: "", bestBuy: "", exit1Pct: "" });
+  };
+
+  const saveEdit = async (t: any) => {
+    const avgN = editDraft.avg ? toNum(editDraft.avg) : null;
+    const entryN = editDraft.entry ? toNum(editDraft.entry) : null;
+    const bestBuyN = editDraft.bestBuy ? toNum(editDraft.bestBuy) : null;
+    const exit1PctN = editDraft.exit1Pct ? toNum(editDraft.exit1Pct) : null;
+
+    const payload: any = {
+      avg_price: avgN,
+      entry_price: entryN,
+      best_buy_price: bestBuyN,
+      exit1_pct: exit1PctN,
+    };
+
+    if (entryN != null) payload.active_entry_label = "MANUELL";
+    else payload.active_entry_label = null;
+
+    setBusy(true);
+    const { error } = await supabase.from("tokens").update(payload).eq("id", t.id);
+    setBusy(false);
+
+    if (error) return Alert.alert("Fehler", error.message);
+
+    cancelEdit();
+    await load();
   };
 
   /* =========================
@@ -407,7 +466,8 @@ const onPullRefresh = async () => {
     live: number | null,
     activeEntry: number | null
   ) => {
-    if (!live || !activeEntry) return Alert.alert("Info", "Live-Preis oder Entry fehlt");
+    if (!live || !activeEntry)
+      return Alert.alert("Info", "Live-Preis oder Entry fehlt");
 
     if (live > activeEntry) {
       setFgiState((p) => ({
@@ -434,41 +494,22 @@ const onPullRefresh = async () => {
   };
 
   /* =========================
-     TEST PUSH
-  ========================= */
-
-  const testPush = async () => {
-    try {
-      const { data: sess } = await supabase.auth.getSession();
-      const user = sess?.session?.user;
-      console.log("JWT:", sess.session?.access_token);
-
-      if (!user) return Alert.alert("Login", "Bitte einloggen.");
-
-      const { data, error } = await supabase.functions.invoke("test-push", {
-        body: { title: "Test Push", body: "Wenn du das siehst, geht Push ✅" },
-      });
-
-      if (error) return Alert.alert("Test Push", formatInvokeError(error));
-
-      Alert.alert("Test Push", "Request gesendet. Prüfe Benachrichtigung.");
-      console.log("test-push response:", data);
-    } catch (e: any) {
-      Alert.alert("Test Push", formatErr(e));
-    }
-  };
-
-  /* =========================
      Render
   ========================= */
 
   return (
     <ScrollView
+      ref={(r) => (scrollRef.current = r)}
       style={{ flex: 1, backgroundColor: "#0b0f14" }}
       contentContainerStyle={{ padding: 24, paddingTop: 60, gap: 16 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onPullRefresh} />}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onPullRefresh} />
+      }
     >
       <Text style={S.title}>Invest Dashboard</Text>
+
+
+ 
 
       {/* Push Status */}
       <View
@@ -486,8 +527,76 @@ const onPullRefresh = async () => {
         <Text style={{ color: "#94a3b8" }}>{pushInfo}</Text>
       </View>
 
-     
-      
+
+        
+
+
+      {/* Token auswählen */}
+      <Pressable
+        onPress={() => setPickerOpen(true)}
+        style={S.btnMid}
+        disabled={!items.length}
+      >
+        <Text style={S.ctaText}>Token auswählen</Text>
+      </Pressable>
+
+      {/* Picker Modal */}
+      <Modal visible={pickerOpen} transparent animationType="fade">
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            padding: 24,
+            justifyContent: "center",
+          }}
+        >
+          <View
+            style={{
+              borderWidth: 1,
+              borderColor: "#334155",
+              borderRadius: 18,
+              padding: 14,
+              backgroundColor: "#0b0f14",
+              gap: 10,
+              maxHeight: "80%",
+            }}
+          >
+            <Text style={{ color: "white", fontSize: 18, fontWeight: "900" }}>
+              Token auswählen
+            </Text>
+
+            <ScrollView>
+              {items.map((t) => {
+                const sym = String(t.symbol ?? "").toUpperCase();
+                return (
+                  <Pressable
+                    key={t.id}
+                    onPress={() => jumpToToken(t.id)}
+                    style={{
+                      paddingVertical: 12,
+                      paddingHorizontal: 12,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: "#334155",
+                      marginBottom: 10,
+                      backgroundColor: "#0b0f14",
+                    }}
+                  >
+                    <Text style={{ color: "white", fontWeight: "900" }}>{sym}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <Pressable onPress={() => setPickerOpen(false)} style={S.btnDark}>
+              <Text style={S.ctaText}>Schließen</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+
+
 
 
 
@@ -534,22 +643,28 @@ const onPullRefresh = async () => {
             keyboardType="decimal-pad"
             style={S.input}
           />
+          <TextInput
+            placeholder="Exit1 in %"
+            placeholderTextColor="#94a3b8"
+            value={exit1Pct}
+            onChangeText={setExit1Pct}
+            keyboardType="decimal-pad"
+            style={S.input}
+          />
 
-          <Pressable onPress={addOrUpdate} disabled={busy} style={S.btnPrimary}>
-            <Text style={S.ctaText}>{editingId ? "Speichern" : "Hinzufügen"}</Text>
+          <Pressable onPress={addToken} disabled={busy} style={S.btnPrimary}>
+            <Text style={S.ctaText}>{busy ? "..." : "Hinzufügen"}</Text>
           </Pressable>
 
-          {editingId && (
-            <Pressable
-              onPress={() => {
-                clearForm();
-                setShowAddForm(false);
-              }}
-              style={S.btnMid}
-            >
-              <Text style={S.ctaText}>Abbrechen</Text>
-            </Pressable>
-          )}
+          <Pressable
+            onPress={() => {
+              clearAddForm();
+              setShowAddForm(false);
+            }}
+            style={S.btnMid}
+          >
+            <Text style={S.ctaText}>Abbrechen</Text>
+          </Pressable>
         </View>
       )}
 
@@ -559,8 +674,34 @@ const onPullRefresh = async () => {
         const live = prices[sym] ?? null;
         const fgi = fgiState[t.id];
 
+        const bb =
+          typeof t.best_buy_price === "number" && Number.isFinite(t.best_buy_price)
+            ? (t.best_buy_price as number)
+            : null;
+
+        let diffPct: number | null = null;
+        if (bb != null && bb !== 0 && typeof live === "number" && Number.isFinite(live)) {
+          diffPct = ((live - bb) / bb) * 100;
+        }
+
+        const diffColor =
+          diffPct == null ? "#cbd5e1" : diffPct >= 0 ? "#22c55e" : "#ef4444";
+
+        const exit1 =
+          typeof t.exit1_pct === "number" && Number.isFinite(t.exit1_pct)
+            ? (t.exit1_pct as number)
+            : null;
+
+        const isEditing = editingId === t.id;
+
         return (
-          <View key={t.id} style={S.card}>
+          <View
+            key={t.id}
+            style={S.card}
+            onLayout={(e) => {
+              tokenY.current[t.id] = e.nativeEvent.layout.y;
+            }}
+          >
             <View style={{ gap: 8 }}>
               <TrendBadge trend={t.trend} />
               {t.suggested_week ? (
@@ -571,26 +712,86 @@ const onPullRefresh = async () => {
             <Text style={S.h2}>{sym}</Text>
 
             <Text style={S.label}>Live (CMC): {fmtPrice(live)}</Text>
-            <Text style={S.label}>AVG (Info): {fmtPrice(t.avg_price ?? null)}</Text>
-            <Text style={S.label}>Best Buy: {fmtPrice(t.best_buy_price ?? null)}</Text>
 
+            {!isEditing ? (
+              <>
+                <Text style={S.label}>AVG (Info): {fmtPrice(t.avg_price ?? null)}</Text>
+                <Text style={S.label}>Best Buy: {fmtPrice(bb)}</Text>
+                <Text style={S.label}>Exit1 in %: {exit1 == null ? "-" : `${exit1}%`}</Text>
+                <Text style={{ color: diffColor, fontWeight: "800" }}>
+                  Abstand zu Best Buy:{" "}
+                  {diffPct == null ? "-" : `${diffPct >= 0 ? "+" : ""}${diffPct.toFixed(2)}%`}
+                </Text>
 
-            <Text
-              style={{
-                color:
-                  typeof live === "number" &&
-                  typeof t.entry_price === "number" &&
-                  t.entry_price >= live
-                    ? "#22c55e"
-                    : "#cbd5e1",
-                fontWeight: "800",
-              }}
-            >
-              Entry (aktiv): {t.active_entry_label ?? "-"} @ {fmtPrice(t.entry_price ?? null)}
-            </Text>
+                <Text
+                  style={{
+                    color:
+                      typeof live === "number" &&
+                      typeof t.entry_price === "number" &&
+                      t.entry_price >= live
+                        ? "#22c55e"
+                        : "#cbd5e1",
+                    fontWeight: "800",
+                  }}
+                >
+                  Entry (aktiv): {t.active_entry_label ?? "-"} @ {fmtPrice(t.entry_price ?? null)}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={{ color: "#94a3b8", fontWeight: "900" }}>
+                  Bearbeiten (direkt hier)
+                </Text>
+
+                <TextInput
+                  placeholder="AVG (Info)"
+                  placeholderTextColor="#94a3b8"
+                  value={editDraft.avg}
+                  onChangeText={(v) => setEditDraft((p) => ({ ...p, avg: v }))}
+                  keyboardType="decimal-pad"
+                  style={S.input}
+                />
+
+                <TextInput
+                  placeholder="Entry (aktiv) manuell"
+                  placeholderTextColor="#94a3b8"
+                  value={editDraft.entry}
+                  onChangeText={(v) => setEditDraft((p) => ({ ...p, entry: v }))}
+                  keyboardType="decimal-pad"
+                  style={S.input}
+                />
+
+                <TextInput
+                  placeholder="Best Buy (manuell)"
+                  placeholderTextColor="#94a3b8"
+                  value={editDraft.bestBuy}
+                  onChangeText={(v) => setEditDraft((p) => ({ ...p, bestBuy: v }))}
+                  keyboardType="decimal-pad"
+                  style={S.input}
+                />
+
+                <TextInput
+                  placeholder="Exit1 in %"
+                  placeholderTextColor="#94a3b8"
+                  value={editDraft.exit1Pct}
+                  onChangeText={(v) => setEditDraft((p) => ({ ...p, exit1Pct: v }))}
+                  keyboardType="decimal-pad"
+                  style={S.input}
+                />
+
+                <Pressable onPress={() => saveEdit(t)} disabled={busy} style={S.btnPrimary}>
+                  <Text style={S.ctaText}>{busy ? "..." : "Speichern"}</Text>
+                </Pressable>
+
+                <Pressable onPress={cancelEdit} style={S.btnMid}>
+                  <Text style={S.ctaText}>Abbrechen</Text>
+                </Pressable>
+              </>
+            )}
 
             <Pressable
               onPress={async () => {
+                if (isEditing) return;
                 if (openFGI[t.id]) {
                   toggleFGI(t.id);
                   return;
@@ -616,7 +817,8 @@ const onPullRefresh = async () => {
                 }}
               >
                 <Text style={{ color: "white", fontWeight: "900" }}>
-                  Fear & Greed: {fgi.value} {fgi.classification ? `(${fgi.classification})` : ""}
+                  Fear & Greed: {fgi.value}{" "}
+                  {fgi.classification ? `(${fgi.classification})` : ""}
                 </Text>
                 <Text style={{ color: "white", fontWeight: "900" }}>
                   Invest jetzt: {fgi.investNowPct}%
@@ -627,13 +829,19 @@ const onPullRefresh = async () => {
               </View>
             )}
 
-            <Pressable onPress={() => toggleAI(t.id)} style={S.btnMid}>
+            <Pressable
+              onPress={() => {
+                if (isEditing) return;
+                toggleAI(t.id);
+              }}
+              style={S.btnMid}
+            >
               <Text style={S.ctaText}>
-                {openAI[t.id] ? "KI Vorschläge ausblenden" : "KI Vorschläge"}
+                {openAI[t.id] ? "autom. Entry-Vorschläge ausblenden" : "autom. Entry-Vorschläge"}
               </Text>
             </Pressable>
 
-            {openAI[t.id] && (
+            {openAI[t.id] && !isEditing && (
               <View style={{ gap: 10 }}>
                 <EntryBox
                   label="ENTRY 1"
@@ -672,9 +880,15 @@ const onPullRefresh = async () => {
               </View>
             )}
 
-            <Pressable onPress={() => startEdit(t)} style={S.btnPrimary}>
-              <Text style={S.ctaText}>Bearbeiten</Text>
-            </Pressable>
+            {!isEditing && (
+              <Pressable
+                onPress={() => startEdit(t)}
+                style={S.btnPrimary}
+                disabled={busy || (editingId != null && editingId !== t.id)}
+              >
+                <Text style={S.ctaText}>Bearbeiten</Text>
+              </Pressable>
+            )}
 
             <Pressable onPress={() => remove(t.id)} style={S.btnDark}>
               <Text style={S.ctaText}>Löschen</Text>

@@ -165,13 +165,17 @@ console.log("ACCESS_TOKEN", sess.session?.access_token);
 
         <Text style={S.label}>Aktuell: {pushLabel(pushMode)}</Text>
 
-        <Pressable
-          onPress={() => setPushModal(true)}
-          disabled={pushBusy}
-          style={{ ...S.btnPrimary, backgroundColor: pushBusy ? "#334155" : "#2563eb" }}
-        >
-          <Text style={S.cta}>{pushBusy ? "..." : "Push Einstellungen"}</Text>
-        </Pressable>
+
+
+
+       <Pressable
+  onPress={() => {}}
+  disabled={true}
+  style={{ ...S.btnPrimary, backgroundColor: "#334155" }}
+>
+  <Text style={S.cta}>Push Einstellungen (deaktiviert)</Text>
+</Pressable>
+
 
         <Modal visible={pushModal} transparent animationType="fade" onRequestClose={() => setPushModal(false)}>
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}>

@@ -3,29 +3,27 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 type Json = Record<string, any>;
 
+const corsHeaders: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+  "Access-Control-Max-Age": "86400",
+};
+
 function json(data: Json, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
 
 function pickArray(j: any): any[] {
-  const a =
-    j?.data?.data ??
-    j?.data?.values ??
-    j?.data ??
-    j?.data?.items ??
-    [];
+  const a = j?.data?.data ?? j?.data?.values ?? j?.data ?? j?.data?.items ?? [];
   return Array.isArray(a) ? a : [];
 }
 
 function parseTs(v: any): number {
-  // akzeptiert number, ISO string, unix seconds/ms
-  if (typeof v === "number" && Number.isFinite(v)) {
-    // Heuristik: < 10^12 => seconds
-    return v < 1e12 ? v * 1000 : v;
-  }
+  if (typeof v === "number" && Number.isFinite(v)) return v < 1e12 ? v * 1000 : v;
   const s = String(v ?? "").trim();
   if (!s) return 0;
 
@@ -46,42 +44,65 @@ function parseClass(item: any): string {
 }
 
 Deno.serve(async (req) => {
+  // ✅ Browser Preflight
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     const supabaseUrl = (Deno.env.get("SUPABASE_URL") || "").trim();
     const anonKey = (Deno.env.get("SUPABASE_ANON_KEY") || "").trim();
+    const serviceKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
 
+    // ⚠️ Verhalten wie bisher: Status 200, aber ok:false
     if (!supabaseUrl || !anonKey) {
-      return json({ error: "Missing env SUPABASE_URL / SUPABASE_ANON_KEY" }, 200);
+      return json({ ok: false, error: "Missing env SUPABASE_URL / SUPABASE_ANON_KEY" }, 200);
+    }
+    if (!serviceKey) {
+      return json({ ok: false, error: "Missing env SUPABASE_SERVICE_ROLE_KEY (Functions Secret)" }, 200);
     }
 
     const authHeader = req.headers.get("Authorization") ?? "";
 
-    // User-Client (damit RLS passt)
-    const supabase = createClient(supabaseUrl, anonKey, {
+    // 1) User prüfen (damit wir uid haben)
+    const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { data: authData, error: authErr } = await supabase.auth.getUser();
+    const { data: authData, error: authErr } = await userClient.auth.getUser();
     if (authErr || !authData?.user) {
-      return json({ error: "Not authenticated" }, 200);
+      return json(
+        { ok: false, error: "Not authenticated", details: authErr?.message ?? null },
+        200
+      );
     }
+    const uid = authData.user.id;
 
-    const { data: settings, error: setErr } = await supabase
-      .from("user_settings")
+    // 2) Admin-Client (bypasst RLS) => CMC Key sicher holen
+    const admin = createClient(supabaseUrl, serviceKey);
+
+    const { data: row, error: keyErr } = await admin
+      .from("user_api_keys")
       .select("cmc_api_key")
-      .eq("user_id", authData.user.id)
+      .eq("user_id", uid)
       .maybeSingle();
 
-    if (setErr) {
-      return json({ error: "Settings error", details: setErr.message }, 200);
+    if (keyErr) {
+      return json(
+        { ok: false, error: "user_api_keys query failed", uid, details: keyErr.message },
+        200
+      );
     }
 
-    const cmcKey = String(settings?.cmc_api_key ?? "").trim();
+    const cmcKey = String(row?.cmc_api_key ?? "").trim();
     if (!cmcKey) {
-      return json({ error: "CMC-API Key fehlt (user_settings.cmc_api_key)" }, 200);
+      return json(
+        { ok: false, error: "CMC-API Key fehlt (user_api_keys.cmc_api_key)", uid },
+        200
+      );
     }
 
-    // 1) Latest (sollte exakt dem CMC-Wert entsprechen)
+    // 3) Latest
     const latestUrl = `https://pro-api.coinmarketcap.com/v3/fear-and-greed/latest?_t=${Date.now()}`;
     const latestRes = await fetch(latestUrl, {
       headers: {
@@ -94,24 +115,18 @@ Deno.serve(async (req) => {
 
     if (latestRes.ok) {
       const j = await latestRes.json().catch(() => null);
-      const item =
-        j?.data ??
-        j?.data?.data ??
-        j?.data?.values ??
-        null;
+      const item = j?.data ?? j?.data?.data ?? j?.data?.values ?? null;
 
       const value = parseValue(item);
       if (Number.isFinite(value)) {
-        return json({
-          value,
-          classification: parseClass(item),
-          source: "latest",
-        });
+        return json(
+          { ok: true, value, classification: parseClass(item), source: "latest" },
+          200
+        );
       }
-      // wenn latest komisch formatiert ist -> fallback
     }
 
-    // 2) Fallback: historical, aber NICHT blind data[0] nehmen
+    // 4) Fallback: historical
     const histUrl = `https://pro-api.coinmarketcap.com/v3/fear-and-greed/historical?limit=10&_t=${Date.now()}`;
     const histRes = await fetch(histUrl, {
       headers: {
@@ -125,7 +140,7 @@ Deno.serve(async (req) => {
     const text = await histRes.text();
     if (!histRes.ok) {
       return json(
-        { error: `CMC HTTP ${histRes.status}`, details: text.slice(0, 400) },
+        { ok: false, error: `CMC HTTP ${histRes.status}`, details: text.slice(0, 400) },
         200
       );
     }
@@ -134,15 +149,15 @@ Deno.serve(async (req) => {
     try {
       j = JSON.parse(text);
     } catch {
-      return json({ error: "CMC JSON parse failed", details: text.slice(0, 200) }, 200);
+      return json(
+        { ok: false, error: "CMC JSON parse failed", details: text.slice(0, 200) },
+        200
+      );
     }
 
     const arr = pickArray(j);
-    if (!arr.length) {
-      return json({ error: "CMC historical empty" }, 200);
-    }
+    if (!arr.length) return json({ ok: false, error: "CMC historical empty" }, 200);
 
-    // nimm den neuesten Eintrag per Timestamp
     let best = arr[0];
     let bestTs = 0;
 
@@ -162,16 +177,20 @@ Deno.serve(async (req) => {
 
     const value = parseValue(best);
     if (!Number.isFinite(value)) {
-      return json({ error: "CMC FGI parse failed", sample: best }, 200);
+      return json({ ok: false, error: "CMC FGI parse failed", sample: best }, 200);
     }
 
-    return json({
-      value,
-      classification: parseClass(best),
-      source: "historical_latest_by_ts",
-      ts: bestTs || null,
-    });
+    return json(
+      {
+        ok: true,
+        value,
+        classification: parseClass(best),
+        source: "historical_latest_by_ts",
+        ts: bestTs || null,
+      },
+      200
+    );
   } catch (e) {
-    return json({ error: "exception", details: String(e) }, 200);
+    return json({ ok: false, error: "exception", details: String(e) }, 200);
   }
 });
