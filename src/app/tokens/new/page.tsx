@@ -11,12 +11,6 @@ function parseNum(v: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function maskKey(k: string) {
-  const s = (k || "").trim();
-  if (s.length <= 12) return s ? "****" : "";
-  return `${s.slice(0, 6)}…${s.slice(-4)}`;
-}
-
 export default function NewTokenPage() {
   const router = useRouter();
 
@@ -27,50 +21,17 @@ export default function NewTokenPage() {
   const [avg, setAvg] = useState(""); // avg_price (Info)
   const [entry, setEntry] = useState(""); // entry_price (aktiv)
   const [bestBuy, setBestBuy] = useState(""); // best_buy_price
-  const [exit1, setExit1] = useState(""); // exit1_pct (%)
+  const [exit1, setExit1] = useState(""); // exit1_pct (als Prozent, z.B. 25)
 
   // CMC mapping
   const [cmcId, setCmcId] = useState<number | null>(null);
   const [cmcCandidates, setCmcCandidates] = useState<any[]>([]);
   const [cmcBusy, setCmcBusy] = useState(false);
 
-  // DEBUG
-  const [debug, setDebug] = useState<any>({
-    envUrl: "",
-    envAnonKey: "",
-    clientUrl: "",
-    hasSession: false,
-    tokenLen: 0,
-    lastRequestUrl: "",
-    lastStatus: null as number | null,
-    lastResponse: "",
-    lastPriceNowStatus: null as number | null,
-    lastPriceNowResponse: "",
-  });
-
-  async function refreshDebug(extra?: Partial<typeof debug>) {
-    const envUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
-    const envAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim();
-
-    const { data: sess } = await supabase.auth.getSession();
-    const jwt = sess?.session?.access_token ?? "";
-
-    setDebug((d: any) => ({
-      ...d,
-      envUrl,
-      envAnonKey: maskKey(envAnonKey),
-      clientUrl: (supabase as any)?.supabaseUrl ?? "",
-      hasSession: !!sess?.session,
-      tokenLen: jwt ? jwt.length : 0,
-      ...(extra || {}),
-    }));
-  }
-
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
       if (!data?.user) router.replace("/login");
-      await refreshDebug();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -91,12 +52,10 @@ export default function NewTokenPage() {
 
     if (!supabaseUrl) {
       setErr("NEXT_PUBLIC_SUPABASE_URL fehlt (Env).");
-      await refreshDebug();
       return;
     }
     if (!anonKey) {
       setErr("NEXT_PUBLIC_SUPABASE_ANON_KEY fehlt (Env).");
-      await refreshDebug();
       return;
     }
 
@@ -105,8 +64,6 @@ export default function NewTokenPage() {
     try {
       const { data: sess } = await supabase.auth.getSession();
       const jwt = sess?.session?.access_token;
-
-      await refreshDebug();
 
       if (!jwt) {
         setErr("Nicht eingeloggt (kein Access Token).");
@@ -120,18 +77,12 @@ export default function NewTokenPage() {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${jwt}`,
-          apikey: anonKey, // wichtig für Supabase Functions Gateway
+          apikey: anonKey, // wichtig fürs Supabase Functions Gateway
         },
         body: JSON.stringify({ symbol: sym }),
       });
 
       const raw = await res.text();
-      await refreshDebug({
-        lastRequestUrl: url,
-        lastStatus: res.status,
-        lastResponse: raw?.slice(0, 2000) || "",
-      });
-
       let out: any = {};
       try {
         out = raw ? JSON.parse(raw) : {};
@@ -164,36 +115,6 @@ export default function NewTokenPage() {
     }
   }
 
-  async function callPriceNow(tokenId: string) {
-    const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
-    const anonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim();
-
-    if (!supabaseUrl || !anonKey) return;
-
-    const { data: sess } = await supabase.auth.getSession();
-    const jwt = sess?.session?.access_token;
-    if (!jwt) return;
-
-    const url = `${supabaseUrl}/functions/v1/token-price-now`;
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${jwt}`,
-        apikey: anonKey, // auch hier wichtig
-      },
-      body: JSON.stringify({ token_id: tokenId }),
-    });
-
-    const raw = await res.text().catch(() => "");
-
-    await refreshDebug({
-      lastPriceNowStatus: res.status,
-      lastPriceNowResponse: raw?.slice(0, 2000) || "",
-    });
-  }
-
   async function save() {
     setErr(null);
 
@@ -203,8 +124,8 @@ export default function NewTokenPage() {
       return;
     }
 
-    if (!cmcId || !Number.isFinite(cmcId)) {
-      setErr("cmc_id fehlt. Bitte zuerst „CMC suchen“ und den richtigen Treffer auswählen.");
+    if (!cmcId) {
+      setErr("Bitte zuerst CMC suchen und einen Treffer auswählen (cmc_id fehlt).");
       return;
     }
 
@@ -215,42 +136,28 @@ export default function NewTokenPage() {
 
     setBusy(true);
 
-    try {
-      const payload: any = {
-        symbol: sym,
-        cmc_id: cmcId,
-        avg_price: avgNum,
-        entry_price: entryNum,
-        best_buy_price: bestBuyNum,
-        exit1_pct: exit1Num,
-        // wichtig: initial null, wird von token-price-now sofort gefüllt
-        last_calc_at: null,
-        last_price: null,
-        active_entry_label: entryNum != null ? "MANUELL" : null,
-      };
+    const payload: any = {
+      symbol: sym,
+      cmc_id: cmcId,
+      avg_price: avgNum,
+      entry_price: entryNum,
+      best_buy_price: bestBuyNum,
+      exit1_pct: exit1Num,
+      last_calc_at: null,
+      last_price: null,
+      active_entry_label: entryNum != null ? "MANUELL" : null,
+    };
 
-      // ✅ Insert + ID zurückholen
-      const { data: inserted, error } = await supabase
-        .from("tokens")
-        .insert(payload)
-        .select("id")
-        .single();
+    const { error } = await supabase.from("tokens").insert(payload);
 
-      if (error) {
-        setErr(error.message);
-        return;
-      }
+    setBusy(false);
 
-      const tokenId = String((inserted as any)?.id ?? "").trim();
-      if (tokenId) {
-        // ✅ sofort Kurs holen / last_price setzen
-        await callPriceNow(tokenId);
-      }
-
-      router.replace("/dashboard");
-    } finally {
-      setBusy(false);
+    if (error) {
+      setErr(error.message);
+      return;
     }
+
+    router.replace("/dashboard");
   }
 
   return (
@@ -261,19 +168,6 @@ export default function NewTokenPage() {
       </div>
 
       {err && <p style={{ color: "tomato", fontWeight: 800 }}>{err}</p>}
-
-      {/* DEBUG BOX */}
-      <div style={{ marginTop: 14, padding: 12, borderRadius: 12, border: "1px solid rgba(0,0,0,0.12)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <div style={{ fontWeight: 800 }}>Debug</div>
-          <button onClick={() => refreshDebug()} style={{ padding: "8px 12px" }}>
-            Refresh
-          </button>
-        </div>
-        <pre style={{ margin: 0, marginTop: 10, fontSize: 12, whiteSpace: "pre-wrap" }}>
-          {JSON.stringify(debug, null, 2)}
-        </pre>
-      </div>
 
       <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
         <div>
@@ -309,7 +203,8 @@ export default function NewTokenPage() {
               >
                 {cmcCandidates.map((c: any) => (
                   <option key={c.id} value={c.id}>
-                    #{c.rank ?? "-"} · {c.symbol} · {c.name} · {c.slug} · id:{c.id} · {c.is_active ? "active" : "inactive"}
+                    #{c.rank ?? "-"} · {c.symbol} · {c.name} · {c.slug} · id:{c.id} ·{" "}
+                    {c.is_active ? "active" : "inactive"}
                   </option>
                 ))}
               </select>
