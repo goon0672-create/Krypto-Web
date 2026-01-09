@@ -11,6 +11,12 @@ function parseNum(v: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function maskKey(k: string) {
+  const s = (k || "").trim();
+  if (s.length <= 12) return s ? "****" : "";
+  return `${s.slice(0, 6)}…${s.slice(-4)}`;
+}
+
 export default function NewTokenPage() {
   const router = useRouter();
 
@@ -23,15 +29,47 @@ export default function NewTokenPage() {
   const [bestBuy, setBestBuy] = useState(""); // best_buy_price
   const [exit1, setExit1] = useState(""); // exit1_pct (als Prozent, z.B. 25)
 
-  // CMC mapping (symbol -> candidates -> choose cmc_id)
+  // CMC mapping
   const [cmcId, setCmcId] = useState<number | null>(null);
   const [cmcCandidates, setCmcCandidates] = useState<any[]>([]);
   const [cmcBusy, setCmcBusy] = useState(false);
 
+  // DEBUG
+  const [debug, setDebug] = useState<any>({
+    envUrl: "",
+    envAnonKey: "",
+    clientUrl: "",
+    hasSession: false,
+    tokenLen: 0,
+    lastRequestUrl: "",
+    lastStatus: null as number | null,
+    lastResponse: "",
+  });
+
+  async function refreshDebug(extra?: Partial<typeof debug>) {
+    const envUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+    const envAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim();
+
+    const { data: sess } = await supabase.auth.getSession();
+    const jwt = sess?.session?.access_token ?? "";
+
+    setDebug((d: any) => ({
+      ...d,
+      envUrl,
+      envAnonKey: maskKey(envAnonKey),
+      clientUrl: (supabase as any)?.supabaseUrl ?? "",
+      hasSession: !!sess?.session,
+      tokenLen: jwt ? jwt.length : 0,
+      ...(extra || {}),
+    }));
+  }
+
   useEffect(() => {
     (async () => {
+      // Auth Gate
       const { data } = await supabase.auth.getUser();
       if (!data?.user) router.replace("/login");
+      await refreshDebug();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -48,34 +86,73 @@ export default function NewTokenPage() {
     }
 
     const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+    const anonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim();
+
     if (!supabaseUrl) {
       setErr("NEXT_PUBLIC_SUPABASE_URL fehlt (Env).");
+      await refreshDebug();
+      return;
+    }
+    if (!anonKey) {
+      setErr("NEXT_PUBLIC_SUPABASE_ANON_KEY fehlt (Env).");
+      await refreshDebug();
       return;
     }
 
     setCmcBusy(true);
+
     try {
+      // JWT holen
       const { data: sess } = await supabase.auth.getSession();
       const jwt = sess?.session?.access_token;
+
+      // Debug sofort aktualisieren
+      await refreshDebug();
+
       if (!jwt) {
-        setErr("Nicht eingeloggt.");
+        setErr("Nicht eingeloggt (kein Access Token).");
         return;
       }
 
       const url = `${supabaseUrl}/functions/v1/cmc-map`;
+
+      // Debug: Was wird wirklich aufgerufen?
+      console.log("[CMC] ENV URL:", supabaseUrl);
+      console.log("[CMC] Client URL:", (supabase as any)?.supabaseUrl);
+      console.log("[CMC] Request URL:", url);
+      console.log("[CMC] Token len:", jwt.length);
+      console.log("[CMC] AnonKey:", maskKey(anonKey));
 
       const res = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${jwt}`,
+          apikey: anonKey, // wichtig fürs Functions Gateway
         },
         body: JSON.stringify({ symbol: sym }),
       });
 
-      const out = await res.json().catch(() => ({}));
+      const raw = await res.text(); // <- NICHT json() (sonst verschluckst du Antworten)
+      await refreshDebug({
+        lastRequestUrl: url,
+        lastStatus: res.status,
+        lastResponse: raw?.slice(0, 2000) || "",
+      });
+
+      let out: any = {};
+      try {
+        out = raw ? JSON.parse(raw) : {};
+      } catch {
+        out = { _raw: raw };
+      }
+
       if (!res.ok) {
-        setErr(out?.error ? String(out.error) : `CMC-Suche fehlgeschlagen (${res.status})`);
+        const msg =
+          out?.error ? String(out.error) : `CMC-Suche fehlgeschlagen (${res.status})`;
+        const details = out?.details ? ` – ${String(out.details)}` : "";
+        const hint = out?.hint ? ` – ${String(out.hint)}` : "";
+        setErr(msg + details + hint);
         return;
       }
 
@@ -87,9 +164,11 @@ export default function NewTokenPage() {
 
       setCmcCandidates(results);
 
-      // default: erster Treffer (ist in der Function bereits sinnvoll sortiert)
+      // default: erster Treffer
       const firstId = Number(results[0]?.id);
       if (Number.isFinite(firstId)) setCmcId(firstId);
+    } catch (e: any) {
+      setErr(`CMC-Suche Exception: ${String(e?.message ?? e)}`);
     } finally {
       setCmcBusy(false);
     }
@@ -111,11 +190,9 @@ export default function NewTokenPage() {
 
     setBusy(true);
 
-    // user_id NICHT manuell setzen -> RLS/Trigger/Default sollen greifen
-    // last_calc_at / last_price = null erzwingt "noch nicht berechnet"
     const payload: any = {
       symbol: sym,
-      cmc_id: cmcId, // <- wichtig
+      cmc_id: cmcId,
       avg_price: avgNum,
       entry_price: entryNum,
       best_buy_price: bestBuyNum,
@@ -146,6 +223,19 @@ export default function NewTokenPage() {
 
       {err && <p style={{ color: "tomato", fontWeight: 800 }}>{err}</p>}
 
+      {/* DEBUG BOX */}
+      <div style={{ marginTop: 14, padding: 12, borderRadius: 12, border: "1px solid rgba(0,0,0,0.12)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <div style={{ fontWeight: 800 }}>Debug</div>
+          <button onClick={() => refreshDebug()} style={{ padding: "8px 12px" }}>
+            Refresh
+          </button>
+        </div>
+        <pre style={{ margin: 0, marginTop: 10, fontSize: 12, whiteSpace: "pre-wrap" }}>
+{JSON.stringify(debug, null, 2)}
+        </pre>
+      </div>
+
       <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
         <div>
           <div style={{ opacity: 0.85, marginBottom: 6 }}>Symbol</div>
@@ -153,7 +243,6 @@ export default function NewTokenPage() {
             value={symbol}
             onChange={(e) => {
               setSymbol(e.target.value);
-              // wenn Symbol geändert wird: Kandidaten zurücksetzen
               setCmcCandidates([]);
               setCmcId(null);
             }}
@@ -186,6 +275,7 @@ export default function NewTokenPage() {
                   </option>
                 ))}
               </select>
+
               <div style={{ opacity: 0.75, marginTop: 6 }}>
                 Wenn mehrere Treffer existieren: den richtigen anhand Name/Slug auswählen.
               </div>
