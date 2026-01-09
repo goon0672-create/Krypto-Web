@@ -13,14 +13,20 @@ function parseNum(v: string): number | null {
 
 export default function NewTokenPage() {
   const router = useRouter();
+
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [symbol, setSymbol] = useState("");
-  const [avg, setAvg] = useState("");
-  const [entry, setEntry] = useState("");
-  const [bestBuy, setBestBuy] = useState("");
-  const [exit1, setExit1] = useState("");
+  const [avg, setAvg] = useState(""); // avg_price (Info)
+  const [entry, setEntry] = useState(""); // entry_price (aktiv)
+  const [bestBuy, setBestBuy] = useState(""); // best_buy_price
+  const [exit1, setExit1] = useState(""); // exit1_pct (als Prozent, z.B. 25)
+
+  // CMC mapping (symbol -> candidates -> choose cmc_id)
+  const [cmcId, setCmcId] = useState<number | null>(null);
+  const [cmcCandidates, setCmcCandidates] = useState<any[]>([]);
+  const [cmcBusy, setCmcBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -30,28 +36,62 @@ export default function NewTokenPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function triggerPriceCalc(sym: string) {
-    // Trigger supabase edge function, damit last_price/last_calc_at gleich gesetzt werden
-    const { data: session } = await supabase.auth.getSession();
-    const jwt = session?.session?.access_token;
+  async function fetchCmcMap() {
+    setErr(null);
+    setCmcCandidates([]);
+    setCmcId(null);
 
-    const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/cmc-entry`;
+    const sym = symbol.trim().toUpperCase();
+    if (!sym) {
+      setErr("Symbol fehlt (für CMC-Suche).");
+      return;
+    }
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        Authorization: `Bearer ${jwt}`,
-      },
-      body: JSON.stringify({ symbol: sym, lookbackDays: 90, force: true }),
-    });
+    const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+    if (!supabaseUrl) {
+      setErr("NEXT_PUBLIC_SUPABASE_URL fehlt (Env).");
+      return;
+    }
 
-    // cmc-entry liefert evtl. ok:false, aber DB kann trotzdem aktualisiert worden sein.
-    // Wir werfen nur bei echten HTTP Problemen.
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`cmc-entry HTTP ${res.status} ${txt}`);
+    setCmcBusy(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const jwt = sess?.session?.access_token;
+      if (!jwt) {
+        setErr("Nicht eingeloggt.");
+        return;
+      }
+
+      const url = `${supabaseUrl}/functions/v1/cmc-map`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${jwt}`,
+        },
+        body: JSON.stringify({ symbol: sym }),
+      });
+
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErr(out?.error ? String(out.error) : `CMC-Suche fehlgeschlagen (${res.status})`);
+        return;
+      }
+
+      const results = Array.isArray(out?.results) ? out.results : [];
+      if (!results.length) {
+        setErr(`Kein CMC Treffer für ${sym}.`);
+        return;
+      }
+
+      setCmcCandidates(results);
+
+      // default: erster Treffer (ist in der Function bereits sinnvoll sortiert)
+      const firstId = Number(results[0]?.id);
+      if (Number.isFinite(firstId)) setCmcId(firstId);
+    } finally {
+      setCmcBusy(false);
     }
   }
 
@@ -71,9 +111,11 @@ export default function NewTokenPage() {
 
     setBusy(true);
 
-    // last_calc_at=null / last_price=null ist ok, ABER danach müssen wir calc triggern.
+    // user_id NICHT manuell setzen -> RLS/Trigger/Default sollen greifen
+    // last_calc_at / last_price = null erzwingt "noch nicht berechnet"
     const payload: any = {
       symbol: sym,
+      cmc_id: cmcId, // <- wichtig
       avg_price: avgNum,
       entry_price: entryNum,
       best_buy_price: bestBuyNum,
@@ -83,30 +125,15 @@ export default function NewTokenPage() {
       active_entry_label: entryNum != null ? "MANUELL" : null,
     };
 
-    // Insert + select (damit wir sauber wissen, dass Insert wirklich durch ist)
-    const { data: inserted, error } = await supabase
-      .from("tokens")
-      .insert(payload)
-      .select("id,symbol")
-      .single();
+    const { error } = await supabase.from("tokens").insert(payload);
+
+    setBusy(false);
 
     if (error) {
-      setBusy(false);
       setErr(error.message);
       return;
     }
 
-    // Danach Kurs/Trend berechnen (damit Dashboard sofort Live-Wert hat)
-    try {
-      await triggerPriceCalc(sym);
-    } catch (e: any) {
-      // Kein harter Abbruch: Token ist gespeichert, nur Live-Daten fehlen ggf.
-      setErr(`Token gespeichert, aber Kurs-Update fehlgeschlagen: ${String(e?.message ?? e)}`);
-    } finally {
-      setBusy(false);
-    }
-
-    // Dashboard zeigt dann nach Reload den last_price
     router.replace("/dashboard");
   }
 
@@ -124,10 +151,46 @@ export default function NewTokenPage() {
           <div style={{ opacity: 0.85, marginBottom: 6 }}>Symbol</div>
           <input
             value={symbol}
-            onChange={(e) => setSymbol(e.target.value)}
+            onChange={(e) => {
+              setSymbol(e.target.value);
+              // wenn Symbol geändert wird: Kandidaten zurücksetzen
+              setCmcCandidates([]);
+              setCmcId(null);
+            }}
             placeholder="z.B. BTC"
             style={{ width: "100%", padding: 14, borderRadius: 12 }}
           />
+
+          <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+            <button disabled={cmcBusy || busy} onClick={fetchCmcMap} style={{ padding: "12px 16px" }}>
+              {cmcBusy ? "CMC suche…" : "CMC suchen"}
+            </button>
+
+            <div style={{ opacity: 0.8 }}>
+              cmc_id: <b>{cmcId ? cmcId : "nicht gesetzt"}</b>
+            </div>
+          </div>
+
+          {cmcCandidates.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ opacity: 0.85, marginBottom: 6 }}>CoinMarketCap Treffer</div>
+              <select
+                value={cmcId ?? ""}
+                onChange={(e) => setCmcId(e.target.value ? Number(e.target.value) : null)}
+                style={{ width: "100%", padding: 14, borderRadius: 12 }}
+              >
+                {cmcCandidates.map((c: any) => (
+                  <option key={c.id} value={c.id}>
+                    #{c.rank ?? "-"} · {c.symbol} · {c.name} · {c.slug} · id:{c.id} ·{" "}
+                    {c.is_active ? "active" : "inactive"}
+                  </option>
+                ))}
+              </select>
+              <div style={{ opacity: 0.75, marginTop: 6 }}>
+                Wenn mehrere Treffer existieren: den richtigen anhand Name/Slug auswählen.
+              </div>
+            </div>
+          )}
         </div>
 
         <div>
