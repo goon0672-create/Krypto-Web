@@ -442,7 +442,7 @@ export default function DashboardPage() {
     const cmcIds = Array.from(new Set(tokensWithId.map((r: any) => Number(r.cmc_id))));
 
     // WICHTIG: diese Edge Function muss existieren
-    const fnUrl = `${supabaseUrl}/functions/v1/cmc-prices-by-id`;
+    const fnUrl = `${supabaseUrl}/functions/v1/cmc-prices-by-ids`;
 
     const res = await fetch(fnUrl, {
       method: "POST",
