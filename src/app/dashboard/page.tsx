@@ -24,6 +24,9 @@ type TokenRow = {
   ex1_pct?: number | null;
   ex2_pct?: number | null;
   ex3_pct?: number | null;
+
+  // IMPORTANT for price refresh
+  cmc_id?: number | null;
 };
 
 type EntrySuggestion = {
@@ -80,10 +83,7 @@ function normClass(s: string | null | undefined) {
     .replace(/\s+/g, " ");
 }
 
-function fgiLabelAndInvestPct(
-  value: number | null | undefined,
-  classification: string | null | undefined
-) {
+function fgiLabelAndInvestPct(value: number | null | undefined, classification: string | null | undefined) {
   const v = typeof value === "number" && Number.isFinite(value) ? value : null;
   const c = normClass(classification);
 
@@ -167,9 +167,7 @@ export default function DashboardPage() {
   const [openFgi, setOpenFgi] = useState<Record<string, boolean>>({});
   const [fgiBusy, setFgiBusy] = useState<Record<string, boolean>>({});
   const [fgiErr, setFgiErr] = useState<Record<string, string | null>>({});
-  const [fgiData, setFgiData] = useState<
-    Record<string, { value: number; classification: string } | null>
-  >({});
+  const [fgiData, setFgiData] = useState<Record<string, { value: number; classification: string } | null>>({});
 
   // TOKENS overlay (list)
   const [openTokenList, setOpenTokenList] = useState(false);
@@ -257,13 +255,7 @@ export default function DashboardPage() {
     },
 
     headRow: { display: "flex", gap: 14, alignItems: "center" },
-    dot: {
-      width: 16,
-      height: 16,
-      borderRadius: 999,
-      background: "#22c55e",
-      boxShadow: "0 0 0 6px rgba(34,197,94,0.12)",
-    },
+    dot: { width: 16, height: 16, borderRadius: 999, background: "#22c55e", boxShadow: "0 0 0 6px rgba(34,197,94,0.12)" },
     ok: { color: "#22c55e", fontWeight: 900, fontSize: 20 },
 
     symbol: { color: "#fff", fontSize: 34, fontWeight: 900, marginTop: 2 },
@@ -276,27 +268,11 @@ export default function DashboardPage() {
 
     divider: { height: 1, background: "rgba(148,163,184,0.25)", marginTop: 18, marginBottom: 14 },
 
-    btnGrid: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 12,
-      marginTop: 14,
-    },
-    btnFull: {
-      width: "100%",
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-    },
+    btnGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14 },
+    btnFull: { width: "100%", display: "flex", justifyContent: "center", alignItems: "center" },
 
     entryBox: { marginTop: 12, paddingTop: 8 },
-    entryTitleRow: {
-      display: "flex",
-      justifyContent: "space-between",
-      gap: 12,
-      alignItems: "center",
-      flexWrap: "wrap" as const,
-    },
+    entryTitleRow: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" as const },
     entryTitle: { color: "#fff", fontSize: 22, fontWeight: 900, margin: 0 },
     entryRecalcBtn: {
       backgroundColor: "#0f172a",
@@ -310,12 +286,7 @@ export default function DashboardPage() {
     },
     entryErr: { color: "tomato", fontWeight: 900, marginTop: 10 },
     entryList: { marginTop: 12, display: "grid", gap: 10 },
-    entryRow: {
-      display: "grid",
-      gridTemplateColumns: "64px 1fr auto",
-      gap: 10,
-      alignItems: "center",
-    },
+    entryRow: { display: "grid", gridTemplateColumns: "64px 1fr auto", gap: 10, alignItems: "center" },
     entryName: { color: "#cbd5e1", fontWeight: 900 },
     entryVal: { color: "#e2e8f0", fontWeight: 900 },
     entryPct: { color: "#93a4be", fontWeight: 900 },
@@ -375,7 +346,6 @@ export default function DashboardPage() {
       borderRadius: 18,
       padding: 14,
       boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
-
       display: "flex",
       flexDirection: "column",
       maxHeight: "calc(100vh - 120px)",
@@ -387,7 +357,6 @@ export default function DashboardPage() {
       marginTop: 12,
       display: "grid",
       gap: 10,
-
       overflowY: "auto",
       flex: "1 1 auto",
       minHeight: 0,
@@ -420,7 +389,7 @@ export default function DashboardPage() {
     const { data, error } = await supabase
       .from("tokens")
       .select(
-        "id,symbol,avg_price,entry_price,best_buy_price,exit1_pct,trend,last_price,last_calc_at,active_entry_label,created_at,ex1_entry,ex2_entry,ex3_entry,ex1_pct,ex2_pct,ex3_pct"
+        "id,symbol,cmc_id,avg_price,entry_price,best_buy_price,exit1_pct,trend,last_price,last_calc_at,active_entry_label,created_at,ex1_entry,ex2_entry,ex3_entry,ex1_pct,ex2_pct,ex3_pct"
       )
       .order("symbol", { ascending: true });
 
@@ -433,6 +402,86 @@ export default function DashboardPage() {
 
     setTokens((data as any) ?? []);
     setLoading(false);
+  }
+
+  // ✅ Reload Button: holt Preise per Function + lädt danach neu
+  async function refreshPricesAndReload() {
+    setErr(null);
+
+    const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+    const anonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim();
+    if (!supabaseUrl || !anonKey) {
+      setErr("Env fehlt: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY");
+      return;
+    }
+
+    const { data: sess } = await supabase.auth.getSession();
+    const jwt = sess?.session?.access_token;
+    if (!jwt) {
+      setErr("Nicht eingeloggt.");
+      return;
+    }
+
+    // Tokens (inkl cmc_id) holen
+    const { data: rows, error: tokErr } = await supabase.from("tokens").select("id, cmc_id");
+    if (tokErr) {
+      setErr(tokErr.message);
+      return;
+    }
+
+    const tokensWithId = (rows || []).filter(
+      (r: any) => Number.isFinite(Number(r.cmc_id)) && Number(r.cmc_id) > 0
+    );
+
+    // nichts zu tun -> normal reload
+    if (!tokensWithId.length) {
+      await load();
+      return;
+    }
+
+    const cmcIds = Array.from(new Set(tokensWithId.map((r: any) => Number(r.cmc_id))));
+
+    // WICHTIG: diese Edge Function muss existieren
+    const fnUrl = `${supabaseUrl}/functions/v1/cmc-prices-by-ids`;
+
+    const res = await fetch(fnUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+        apikey: anonKey,
+      },
+      body: JSON.stringify({ cmc_ids: cmcIds }),
+    });
+
+    const out = await res.json().catch(() => ({} as any));
+
+    if (!res.ok || !out?.ok) {
+      setErr(out?.error ? String(out.error) : `Preis-Update fehlgeschlagen (HTTP ${res.status})`);
+      await load();
+      return;
+    }
+
+    const prices: Record<string, number> = out?.prices || {};
+    const now = new Date().toISOString();
+
+    // Tokens updaten
+    for (const t of tokensWithId) {
+      const p = prices[String(t.cmc_id)];
+      if (typeof p === "number" && Number.isFinite(p)) {
+        const { error } = await supabase
+          .from("tokens")
+          .update({ last_price: p, last_calc_at: now })
+          .eq("id", t.id);
+
+        if (error) {
+          setErr(`Update failed (${t.id}): ${error.message}`);
+          break;
+        }
+      }
+    }
+
+    await load();
   }
 
   useEffect(() => {
@@ -496,7 +545,6 @@ export default function DashboardPage() {
     setSaving(true);
     setErr(null);
 
-    // ✅ updated_at entfernt (Spalte existiert bei dir nicht)
     const payload: any = {
       symbol: sym,
       avg_price: avgN,
@@ -592,8 +640,7 @@ export default function DashboardPage() {
   async function adoptEntry(t: TokenRow, which: "EX1" | "EX2" | "EX3") {
     const id = t.id;
 
-    const pick =
-      which === "EX1" ? t.ex1_entry : which === "EX2" ? t.ex2_entry : t.ex3_entry;
+    const pick = which === "EX1" ? t.ex1_entry : which === "EX2" ? t.ex2_entry : t.ex3_entry;
 
     if (typeof pick !== "number" || !Number.isFinite(pick)) {
       setEntryErr((p) => ({ ...p, [id]: `${which} ist leer – erst "Neu berechnen" drücken.` }));
@@ -602,7 +649,6 @@ export default function DashboardPage() {
 
     setEntryErr((p) => ({ ...p, [id]: null }));
 
-    // ✅ updated_at entfernt (Spalte existiert bei dir nicht)
     const res = await supabase
       .from("tokens")
       .update({
@@ -693,11 +739,24 @@ export default function DashboardPage() {
           </div>
 
           <div style={S.row}>
-            <button style={S.btnMid} onClick={() => setOpenTokenList(true)}>TOKENS</button>
-            <button style={S.btnPrimary} onClick={startAdd}>Token erfassen</button>
-            <button style={S.btnMid} onClick={() => router.push("/explore")}>Explore</button>
-            <button style={S.btnDark} onClick={load}>Reload</button>
-            <button style={S.btnDark} onClick={logout}>Logout</button>
+            <button style={S.btnMid} onClick={() => setOpenTokenList(true)}>
+              TOKENS
+            </button>
+            <button style={S.btnPrimary} onClick={startAdd}>
+              Token erfassen
+            </button>
+            <button style={S.btnMid} onClick={() => router.push("/explore")}>
+              Explore
+            </button>
+
+            {/* ✅ Reload macht jetzt: Preise aktualisieren + danach Tokens laden */}
+            <button style={S.btnDark} onClick={refreshPricesAndReload}>
+              Reload
+            </button>
+
+            <button style={S.btnDark} onClick={logout}>
+              Logout
+            </button>
           </div>
         </div>
 
@@ -713,10 +772,8 @@ export default function DashboardPage() {
             const live = typeof t.last_price === "number" ? t.last_price : null;
             const bb = typeof t.best_buy_price === "number" ? t.best_buy_price : null;
 
-            const pctAktuell =
-              live != null && bb != null && bb !== 0 ? ((live - bb) / bb) * 100 : null;
-            const pctColor =
-              pctAktuell == null ? "#e2e8f0" : pctAktuell >= 0 ? "#22c55e" : "#ef4444";
+            const pctAktuell = live != null && bb != null && bb !== 0 ? ((live - bb) / bb) * 100 : null;
+            const pctColor = pctAktuell == null ? "#e2e8f0" : pctAktuell >= 0 ? "#22c55e" : "#ef4444";
 
             const isEntryOpen = !!openEntry[t.id];
             const isFgiOpen = !!openFgi[t.id];
@@ -743,8 +800,7 @@ export default function DashboardPage() {
 
                 <div style={S.kv}>
                   <div>
-                    <span style={S.k}>Live:</span>{" "}
-                    <span style={S.v}>{fmtSmart(t.last_price)}</span>
+                    <span style={S.k}>Live:</span> <span style={S.v}>{fmtSmart(t.last_price)}</span>
                   </div>
 
                   <div>
@@ -754,9 +810,7 @@ export default function DashboardPage() {
 
                   <div style={S.strongLine}>
                     Entry (aktiv):{" "}
-                    <span style={{ fontWeight: 900 }}>
-                      {t.entry_price == null ? "-" : fmtFixed(t.entry_price, 8)}
-                    </span>{" "}
+                    <span style={{ fontWeight: 900 }}>{t.entry_price == null ? "-" : fmtFixed(t.entry_price, 8)}</span>{" "}
                     <span style={{ color: "#93a4be", fontWeight: 900 }}>
                       {t.active_entry_label ? `(${t.active_entry_label})` : ""}
                     </span>
@@ -780,8 +834,7 @@ export default function DashboardPage() {
                   </div>
 
                   <div>
-                    <span style={S.k}>Trend:</span>{" "}
-                    <span style={S.v}>{t.trend ?? "-"}</span>
+                    <span style={S.k}>Trend:</span> <span style={S.v}>{t.trend ?? "-"}</span>
                   </div>
                 </div>
 
@@ -846,9 +899,7 @@ export default function DashboardPage() {
                             <div style={S.entryName}>{name}:</div>
                             <div style={S.entryVal}>
                               {price == null ? "-" : fmtSmart(price)}{" "}
-                              <span style={S.entryPct}>
-                                {pct == null ? "" : `(${fmtPctSigned(-Math.abs(pct), 2)})`}
-                              </span>
+                              <span style={S.entryPct}>{pct == null ? "" : `(${fmtPctSigned(-Math.abs(pct), 2)})`}</span>
                             </div>
                             <button style={S.entryUseBtn} onClick={() => adoptEntry(t, name)}>
                               Übernehmen
