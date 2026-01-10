@@ -46,7 +46,6 @@ export default function NewTokenPage() {
 
     const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
     const anonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim();
-
     if (!supabaseUrl) return setErr("NEXT_PUBLIC_SUPABASE_URL fehlt (Env).");
     if (!anonKey) return setErr("NEXT_PUBLIC_SUPABASE_ANON_KEY fehlt (Env).");
 
@@ -95,6 +94,7 @@ export default function NewTokenPage() {
     const jwt = sess?.session?.access_token;
     if (!jwt) return null;
 
+    // bei dir heißt es cmc-price-by-id
     const url = `${supabaseUrl}/functions/v1/cmc-price-by-id`;
     const res = await fetch(url, {
       method: "POST",
@@ -108,7 +108,6 @@ export default function NewTokenPage() {
 
     const out = await res.json().catch(() => ({}));
     if (!res.ok || !out?.ok) {
-      // nicht hart failen – Token ist schon gespeichert
       console.log("cmc-price-by-id failed", res.status, out);
       return null;
     }
@@ -117,12 +116,44 @@ export default function NewTokenPage() {
     return Number.isFinite(p) ? p : null;
   }
 
+  async function runEntryCalc(symbolUpper: string) {
+    // best effort – darf Token-Erstellung nicht kaputt machen
+    const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+    const anonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim();
+    if (!supabaseUrl || !anonKey) return;
+
+    const { data: sess } = await supabase.auth.getSession();
+    const jwt = sess?.session?.access_token;
+    if (!jwt) return;
+
+    // das soll Trend + EX1/2/3 + last_price in tokens schreiben
+    const url = `${supabaseUrl}/functions/v1/cmc-entry-cmc`;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+        apikey: anonKey,
+      },
+      body: JSON.stringify({
+        symbol: symbolUpper,
+        lookbackDays: 90,
+        force: true,
+      }),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.log("cmc-entry-cmc failed", res.status, txt);
+    }
+  }
+
   async function save() {
     setErr(null);
 
     const sym = symbol.trim().toUpperCase();
     if (!sym) return setErr("Symbol fehlt.");
-
     if (!cmcId) return setErr("Bitte zuerst 'CMC suchen' und einen Treffer auswählen (cmc_id).");
 
     const avgNum = parseNum(avg);
@@ -146,11 +177,7 @@ export default function NewTokenPage() {
         active_entry_label: entryNum != null ? "MANUELL" : null,
       };
 
-      const ins = await supabase
-        .from("tokens")
-        .insert(payload)
-        .select("id, cmc_id")
-        .single();
+      const ins = await supabase.from("tokens").insert(payload).select("id,symbol,cmc_id").single();
 
       if (ins.error) {
         setErr(ins.error.message);
@@ -159,8 +186,8 @@ export default function NewTokenPage() {
 
       const tokenId = ins.data.id as string;
 
-      // 2) Direkt Preis holen und updaten
-      const price = await fetchPriceByCmcId(cmcId);
+      // 2) Direkt Preis holen und updaten (damit sofort Live da ist, auch wenn Entry-Calc scheitert)
+      const price = await fetchPriceByCmcId(Number(ins.data.cmc_id));
 
       if (price != null) {
         const upd = await supabase
@@ -172,12 +199,17 @@ export default function NewTokenPage() {
           .eq("id", tokenId);
 
         if (upd.error) {
-          // Token ist da, nur Preisupdate schlug fehl
           console.log("token price update failed", upd.error.message);
         }
       }
 
+      // 3) ✅ Trend + Entry1/2/3 sofort berechnen lassen (schreibt in DB)
+      //    Das ist genau dein gewünschtes Verhalten.
+      await runEntryCalc(sym);
+
       router.replace("/dashboard");
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
     } finally {
       setBusy(false);
     }
@@ -226,7 +258,8 @@ export default function NewTokenPage() {
               >
                 {cmcCandidates.map((c: any) => (
                   <option key={c.id} value={c.id}>
-                    #{c.rank ?? "-"} · {c.symbol} · {c.name} · {c.slug} · id:{c.id} · {c.is_active ? "active" : "inactive"}
+                    #{c.rank ?? "-"} · {c.symbol} · {c.name} · {c.slug} · id:{c.id} ·{" "}
+                    {c.is_active ? "active" : "inactive"}
                   </option>
                 ))}
               </select>
@@ -239,23 +272,45 @@ export default function NewTokenPage() {
 
         <div>
           <div style={{ opacity: 0.85, marginBottom: 6 }}>Durchschnitt (Info) – optional</div>
-          <input value={avg} onChange={(e) => setAvg(e.target.value)} placeholder="z.B. 0,0123" style={{ width: "100%", padding: 14, borderRadius: 12 }} />
+          <input
+            value={avg}
+            onChange={(e) => setAvg(e.target.value)}
+            placeholder="z.B. 0,0123"
+            style={{ width: "100%", padding: 14, borderRadius: 12 }}
+          />
         </div>
 
         <div>
           <div style={{ opacity: 0.85, marginBottom: 6 }}>Entry (aktiv) – optional</div>
-          <input value={entry} onChange={(e) => setEntry(e.target.value)} placeholder="z.B. 0,0100" style={{ width: "100%", padding: 14, borderRadius: 12 }} />
+          <input
+            value={entry}
+            onChange={(e) => setEntry(e.target.value)}
+            placeholder="z.B. 0,0100"
+            style={{ width: "100%", padding: 14, borderRadius: 12 }}
+          />
         </div>
 
         <div>
           <div style={{ opacity: 0.85, marginBottom: 6 }}>Best Buy – optional</div>
-          <input value={bestBuy} onChange={(e) => setBestBuy(e.target.value)} placeholder="z.B. 0,0090" style={{ width: "100%", padding: 14, borderRadius: 12 }} />
+          <input
+            value={bestBuy}
+            onChange={(e) => setBestBuy(e.target.value)}
+            placeholder="z.B. 0,0090"
+            style={{ width: "100%", padding: 14, borderRadius: 12 }}
+          />
         </div>
 
         <div>
           <div style={{ opacity: 0.85, marginBottom: 6 }}>Exit 1 (%) – optional</div>
-          <input value={exit1} onChange={(e) => setExit1(e.target.value)} placeholder="z.B. 25" style={{ width: "100%", padding: 14, borderRadius: 12 }} />
-          <div style={{ opacity: 0.75, marginTop: 6 }}>Eingabe: 25 → gespeichert als 25 → Anzeige im Dashboard: +25%</div>
+          <input
+            value={exit1}
+            onChange={(e) => setExit1(e.target.value)}
+            placeholder="z.B. 25"
+            style={{ width: "100%", padding: 14, borderRadius: 12 }}
+          />
+          <div style={{ opacity: 0.75, marginTop: 6 }}>
+            Eingabe: 25 → gespeichert als 25 → Anzeige im Dashboard: +25%
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
