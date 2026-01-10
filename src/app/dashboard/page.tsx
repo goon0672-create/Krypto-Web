@@ -611,7 +611,7 @@ export default function DashboardPage() {
       const { data: session } = await supabase.auth.getSession();
       const jwt = session?.session?.access_token;
 
-      const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/cmc-entry`;
+      const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/cmc-entry-cmc`;
       const res = await fetch(url, {
         method: "POST",
         headers: {
