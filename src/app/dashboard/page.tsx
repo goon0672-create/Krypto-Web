@@ -17,7 +17,6 @@ type TokenRow = {
   active_entry_label: string | null;
   created_at: string | null;
 
-  // entry suggestions fields (optional in DB)
   ex1_entry?: number | null;
   ex2_entry?: number | null;
   ex3_entry?: number | null;
@@ -25,15 +24,10 @@ type TokenRow = {
   ex2_pct?: number | null;
   ex3_pct?: number | null;
 
-  // IMPORTANT for price refresh
   cmc_id?: number | null;
 };
 
-type EntrySuggestion = {
-  name: "EX1" | "EX2" | "EX3";
-  price: number;
-  pctUnderLive: number;
-};
+type EntrySuggestion = { name: "EX1" | "EX2" | "EX3"; price: number; pctUnderLive: number };
 
 type EntryApiResponse = {
   ok: boolean;
@@ -42,11 +36,7 @@ type EntryApiResponse = {
   error?: string;
 };
 
-type FgiApiResponse = {
-  value?: number;
-  classification?: string;
-  error?: string;
-};
+type FgiApiResponse = { value?: number; classification?: string; error?: string };
 
 function toNum(v: string): number | null {
   const s = String(v ?? "").trim();
@@ -64,7 +54,6 @@ function fmtSmart(v: number | null | undefined) {
   return v.toFixed(12);
 }
 
-// ✅ default digits = 8 (avg_price / best_buy_price sollen 8 anzeigen können)
 function fmtFixed(v: number | null | undefined, digits = 8) {
   if (typeof v !== "number" || !Number.isFinite(v)) return "-";
   return v.toFixed(digits);
@@ -81,10 +70,7 @@ function normClass(s: string | null | undefined) {
   return String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function fgiLabelAndInvestPct(
-  value: number | null | undefined,
-  classification: string | null | undefined
-) {
+function fgiLabelAndInvestPct(value: number | null | undefined, classification: string | null | undefined) {
   const v = typeof value === "number" && Number.isFinite(value) ? value : null;
   const c = normClass(classification);
 
@@ -149,7 +135,6 @@ export default function DashboardPage() {
   const [tokens, setTokens] = useState<TokenRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
-  // Inline edit form (per token)
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -159,26 +144,18 @@ export default function DashboardPage() {
   const [bestBuy, setBestBuy] = useState("");
   const [exit1, setExit1] = useState("");
 
-  // Entry suggestions UI state per token
   const [openEntry, setOpenEntry] = useState<Record<string, boolean>>({});
   const [entryBusy, setEntryBusy] = useState<Record<string, boolean>>({});
   const [entryErr, setEntryErr] = useState<Record<string, string | null>>({});
 
-  // FGI UI state per token
   const [openFgi, setOpenFgi] = useState<Record<string, boolean>>({});
   const [fgiBusy, setFgiBusy] = useState<Record<string, boolean>>({});
   const [fgiErr, setFgiErr] = useState<Record<string, string | null>>({});
-  const [fgiData, setFgiData] = useState<
-    Record<string, { value: number; classification: string } | null>
-  >({});
+  const [fgiData, setFgiData] = useState<Record<string, { value: number; classification: string } | null>>({});
 
-  // TOKENS overlay (list)
   const [openTokenList, setOpenTokenList] = useState(false);
 
-  // card refs for scrolling
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
-  // flash highlight after jump
   const [flashId, setFlashId] = useState<string | null>(null);
 
   const S: any = {
@@ -258,13 +235,7 @@ export default function DashboardPage() {
     },
 
     headRow: { display: "flex", gap: 14, alignItems: "center" },
-    dot: {
-      width: 16,
-      height: 16,
-      borderRadius: 999,
-      background: "#22c55e",
-      boxShadow: "0 0 0 6px rgba(34,197,94,0.12)",
-    },
+    dot: { width: 16, height: 16, borderRadius: 999, background: "#22c55e", boxShadow: "0 0 0 6px rgba(34,197,94,0.12)" },
     ok: { color: "#22c55e", fontWeight: 900, fontSize: 20 },
 
     symbol: { color: "#fff", fontSize: 34, fontWeight: 900, marginTop: 2 },
@@ -281,13 +252,7 @@ export default function DashboardPage() {
     btnFull: { width: "100%", display: "flex", justifyContent: "center", alignItems: "center" },
 
     entryBox: { marginTop: 12, paddingTop: 8 },
-    entryTitleRow: {
-      display: "flex",
-      justifyContent: "space-between",
-      gap: 12,
-      alignItems: "center",
-      flexWrap: "wrap" as const,
-    },
+    entryTitleRow: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" as const },
     entryTitle: { color: "#fff", fontSize: 22, fontWeight: 900, margin: 0 },
     entryRecalcBtn: {
       backgroundColor: "#0f172a",
@@ -368,27 +333,8 @@ export default function DashboardPage() {
     },
     overlayTitleRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 },
     overlayTitle: { color: "#fff", fontSize: 18, fontWeight: 900, margin: 0 },
-    tokenList: {
-      marginTop: 12,
-      display: "grid",
-      gap: 10,
-      overflowY: "auto",
-      flex: "1 1 auto",
-      minHeight: 0,
-      paddingRight: 4,
-      WebkitOverflowScrolling: "touch",
-    },
-    tokenItemBtn: {
-      width: "100%",
-      backgroundColor: "#0f172a",
-      border: "1px solid #1f2937",
-      color: "#fff",
-      padding: "12px 14px",
-      borderRadius: 14,
-      cursor: "pointer",
-      fontWeight: 900,
-      textAlign: "left" as const,
-    },
+    tokenList: { marginTop: 12, display: "grid", gap: 10, overflowY: "auto", flex: "1 1 auto", minHeight: 0, paddingRight: 4, WebkitOverflowScrolling: "touch" },
+    tokenItemBtn: { width: "100%", backgroundColor: "#0f172a", border: "1px solid #1f2937", color: "#fff", padding: "12px 14px", borderRadius: 14, cursor: "pointer", fontWeight: 900, textAlign: "left" as const },
   };
 
   async function load() {
@@ -419,75 +365,21 @@ export default function DashboardPage() {
     setLoading(false);
   }
 
-  // ✅ Reload: NUR Kurs aktualisieren (last_price + last_calc_at), KEIN EX1/2/3 Recalc.
-  //    Zeigt neuen Kurs sofort in UI; DB-Update wird versucht, kann aber an RLS scheitern -> dann klare Fehlermeldung.
+  // ✅ Reload = NUR Preise (serverseitig), keine EX Berechnung
   async function refreshPricesAndReload() {
     setErr(null);
 
-    // Tokens (inkl cmc_id) holen
-    const { data: rows, error: tokErr } = await supabase.from("tokens").select("id, cmc_id");
-    if (tokErr) {
-      setErr(tokErr.message);
-      return;
-    }
-
-    const tokensWithId = (rows || []).filter(
-      (r: any) => Number.isFinite(Number(r.cmc_id)) && Number(r.cmc_id) > 0
-    );
-
-    if (!tokensWithId.length) {
-      await load();
-      return;
-    }
-
-    const cmcIds = Array.from(new Set(tokensWithId.map((r: any) => Number(r.cmc_id))));
-
-    // ✅ Function invoke (JWT automatisch)
-    const { data, error } = await supabase.functions.invoke("cmc-prices-ids", {
-      body: { cmc_ids: cmcIds },
+    const { data, error } = await supabase.functions.invoke("cmc-reload-prices", {
+      body: {},
     });
 
     if (error) {
-      setErr(`cmc-prices-ids Fehler: ${error.message}`);
-      await load();
+      setErr(`cmc-reload-prices Fehler: ${error.message}`);
       return;
     }
-
     if (!data?.ok) {
-      setErr(data?.error ? String(data.error) : "cmc-prices-ids: Antwort ohne ok=true");
-      await load();
+      setErr(data?.error ? String(data.error) : "cmc-reload-prices: Antwort ohne ok=true");
       return;
-    }
-
-    const prices: Record<string, number> = data?.prices || {};
-    const now = new Date().toISOString();
-
-    // 1) Sofort in UI setzen
-    setTokens((prev) =>
-      prev.map((t) => {
-        const id = Number((t as any).cmc_id);
-        const p = prices[String(id)];
-        if (typeof p === "number" && Number.isFinite(p)) {
-          return { ...t, last_price: p, last_calc_at: now };
-        }
-        return t;
-      })
-    );
-
-    // 2) DB Update versuchen (wenn RLS erlaubt)
-    for (const t of tokensWithId) {
-      const p = prices[String(t.cmc_id)];
-      if (typeof p === "number" && Number.isFinite(p)) {
-        const { error: upErr } = await supabase
-          .from("tokens")
-          .update({ last_price: p, last_calc_at: now })
-          .eq("id", t.id);
-
-        if (upErr) {
-          setErr(`Preis in UI aktualisiert, aber DB-Update blockiert (RLS/Policy): ${upErr.message}`);
-          break;
-        }
-      }
     }
 
     await load();
@@ -536,20 +428,14 @@ export default function DashboardPage() {
     if (!editingId) return;
 
     const sym = symbol.trim().toUpperCase();
-    if (!sym) {
-      setErr("Token Symbol fehlt.");
-      return;
-    }
+    if (!sym) return setErr("Token Symbol fehlt.");
 
     const avgN = toNum(avg);
     const entryN = toNum(entry);
     const bbN = toNum(bestBuy);
     const ex1N = toNum(exit1);
 
-    if (ex1N != null && (ex1N < -100000 || ex1N > 100000)) {
-      setErr("Exit1% ist unplausibel.");
-      return;
-    }
+    if (ex1N != null && (ex1N < -100000 || ex1N > 100000)) return setErr("Exit1% ist unplausibel.");
 
     setSaving(true);
     setErr(null);
@@ -567,10 +453,7 @@ export default function DashboardPage() {
 
     setSaving(false);
 
-    if (res.error) {
-      setErr(res.error.message);
-      return;
-    }
+    if (res.error) return setErr(res.error.message);
 
     resetEditForm();
     await load();
@@ -582,10 +465,7 @@ export default function DashboardPage() {
 
     setErr(null);
     const res = await supabase.from("tokens").delete().eq("id", id);
-    if (res.error) {
-      setErr(res.error.message);
-      return;
-    }
+    if (res.error) return setErr(res.error.message);
 
     setOpenEntry((p) => ({ ...p, [id]: false }));
     setEntryErr((p) => ({ ...p, [id]: null }));
@@ -656,11 +536,7 @@ export default function DashboardPage() {
 
     setEntryErr((p) => ({ ...p, [id]: null }));
 
-    const res = await supabase
-      .from("tokens")
-      .update({ entry_price: pick, active_entry_label: which })
-      .eq("id", id);
-
+    const res = await supabase.from("tokens").update({ entry_price: pick, active_entry_label: which }).eq("id", id);
     if (res.error) {
       setEntryErr((p) => ({ ...p, [id]: res.error.message }));
       return;
@@ -690,21 +566,12 @@ export default function DashboardPage() {
 
       const j = (await res.json().catch(() => ({}))) as FgiApiResponse;
 
-      if (!res.ok) {
-        setFgiErr((p) => ({ ...p, [id]: `FGI Fehler: HTTP ${res.status}` }));
-        return;
-      }
-      if (j?.error) {
-        setFgiErr((p) => ({ ...p, [id]: `FGI Fehler: ${String(j.error)}` }));
-        return;
-      }
+      if (!res.ok) return setFgiErr((p) => ({ ...p, [id]: `FGI Fehler: HTTP ${res.status}` }));
+      if (j?.error) return setFgiErr((p) => ({ ...p, [id]: `FGI Fehler: ${String(j.error)}` }));
 
       const val = Number(j?.value);
       const cls = String(j?.classification ?? "");
-      if (!Number.isFinite(val)) {
-        setFgiErr((p) => ({ ...p, [id]: `FGI Fehler: ungültiger Wert` }));
-        return;
-      }
+      if (!Number.isFinite(val)) return setFgiErr((p) => ({ ...p, [id]: `FGI Fehler: ungültiger Wert` }));
 
       setFgiData((p) => ({ ...p, [id]: { value: val, classification: cls } }));
     } catch (e: any) {
@@ -722,7 +589,6 @@ export default function DashboardPage() {
 
   function jumpToToken(id: string) {
     setOpenTokenList(false);
-
     setTimeout(() => {
       const el = cardRefs.current[id];
       if (el) {
@@ -743,24 +609,12 @@ export default function DashboardPage() {
           </div>
 
           <div style={S.row}>
-            <button style={S.btnMid} onClick={() => setOpenTokenList(true)}>
-              TOKENS
-            </button>
-            <button style={S.btnPrimary} onClick={startAdd}>
-              Token erfassen
-            </button>
-            <button style={S.btnMid} onClick={() => router.push("/explore")}>
-              Explore
-            </button>
+            <button style={S.btnMid} onClick={() => setOpenTokenList(true)}>TOKENS</button>
+            <button style={S.btnPrimary} onClick={startAdd}>Token erfassen</button>
+            <button style={S.btnMid} onClick={() => router.push("/explore")}>Explore</button>
 
-            {/* ✅ Reload: nur Preise */}
-            <button style={S.btnDark} onClick={refreshPricesAndReload}>
-              Reload
-            </button>
-
-            <button style={S.btnDark} onClick={logout}>
-              Logout
-            </button>
+            <button style={S.btnDark} onClick={refreshPricesAndReload}>Reload</button>
+            <button style={S.btnDark} onClick={logout}>Logout</button>
           </div>
         </div>
 
@@ -791,9 +645,7 @@ export default function DashboardPage() {
               <div
                 key={t.id}
                 style={{ ...S.card, ...(isFlash ? S.cardFlash : null) }}
-                ref={(el) => {
-                  cardRefs.current[t.id] = el;
-                }}
+                ref={(el) => { cardRefs.current[t.id] = el; }}
               >
                 <div style={S.symbol}>{t.symbol}</div>
 
@@ -803,9 +655,7 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={S.kv}>
-                  <div>
-                    <span style={S.k}>Live:</span> <span style={S.v}>{fmtSmart(t.last_price)}</span>
-                  </div>
+                  <div><span style={S.k}>Live:</span> <span style={S.v}>{fmtSmart(t.last_price)}</span></div>
 
                   <div>
                     <span style={S.k}>Durchschnitt:</span>{" "}
@@ -832,29 +682,15 @@ export default function DashboardPage() {
                     </span>
                   </div>
 
-                  <div>
-                    <span style={S.k}>Exit 1:</span>{" "}
-                    <span style={S.v}>{t.exit1_pct == null ? "-" : fmtPctSigned(t.exit1_pct, 2)}</span>
-                  </div>
-
-                  <div>
-                    <span style={S.k}>Trend:</span> <span style={S.v}>{t.trend ?? "-"}</span>
-                  </div>
+                  <div><span style={S.k}>Exit 1:</span> <span style={S.v}>{t.exit1_pct == null ? "-" : fmtPctSigned(t.exit1_pct, 2)}</span></div>
+                  <div><span style={S.k}>Trend:</span> <span style={S.v}>{t.trend ?? "-"}</span></div>
                 </div>
 
                 <div style={S.divider} />
 
                 {isFgiOpen && (
                   <div style={S.fgiBox}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                      }}
-                    >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                       <h3 style={S.fgiTitle}>FGI</h3>
                       <button style={S.btnMid} disabled={!!fgiBusy[t.id]} onClick={() => fetchFgi(t.id)}>
                         {fgiBusy[t.id] ? "Lade…" : "Aktualisieren"}
@@ -865,18 +701,9 @@ export default function DashboardPage() {
 
                     {fgi && investInfo && (
                       <div style={S.fgiRow}>
-                        <div>
-                          <span style={S.k}>Fear &amp; Greed Index:</span>{" "}
-                          <span style={S.fgiValue}>{Math.round(fgi.value)}</span>
-                        </div>
-                        <div>
-                          <span style={S.k}>Phase:</span>{" "}
-                          <span style={{ fontWeight: 900, color: investInfo.color }}>{investInfo.phase}</span>
-                        </div>
-                        <div>
-                          <span style={S.k}>Invest (Empfehlung):</span>{" "}
-                          <span style={{ fontWeight: 900, color: investInfo.color }}>{investInfo.investText}</span>
-                        </div>
+                        <div><span style={S.k}>Fear &amp; Greed Index:</span> <span style={S.fgiValue}>{Math.round(fgi.value)}</span></div>
+                        <div><span style={S.k}>Phase:</span> <span style={{ fontWeight: 900, color: investInfo.color }}>{investInfo.phase}</span></div>
+                        <div><span style={S.k}>Invest (Empfehlung):</span> <span style={{ fontWeight: 900, color: investInfo.color }}>{investInfo.investText}</span></div>
                       </div>
                     )}
                   </div>
@@ -905,9 +732,7 @@ export default function DashboardPage() {
                               {price == null ? "-" : fmtSmart(price)}{" "}
                               <span style={S.entryPct}>{pct == null ? "" : `(${fmtPctSigned(-Math.abs(pct), 2)})`}</span>
                             </div>
-                            <button style={S.entryUseBtn} onClick={() => adoptEntry(t, name)}>
-                              Übernehmen
-                            </button>
+                            <button style={S.entryUseBtn} onClick={() => adoptEntry(t, name)}>Übernehmen</button>
                           </div>
                         );
                       })}
@@ -922,25 +747,17 @@ export default function DashboardPage() {
                     onClick={async () => {
                       toggleFgi(t.id);
                       const willOpen = !openFgi[t.id];
-                      if (willOpen && !fgiData[t.id]) {
-                        await fetchFgi(t.id);
-                      }
+                      if (willOpen && !fgiData[t.id]) await fetchFgi(t.id);
                     }}
                   >
                     {fgiBusy[t.id] ? "FGI…" : isFgiOpen ? "FGI schließen" : "FGI"}
                   </button>
 
-                  <button style={{ ...S.btnPrimary, ...S.btnFull }} onClick={() => startEditInline(t)}>
-                    Bearbeiten
-                  </button>
-
+                  <button style={{ ...S.btnPrimary, ...S.btnFull }} onClick={() => startEditInline(t)}>Bearbeiten</button>
                   <button style={{ ...S.btnMid, ...S.btnFull }} onClick={() => toggleEntry(t.id)}>
                     {isEntryOpen ? "Entry-Vorschläge schließen" : "Entry-Vorschläge"}
                   </button>
-
-                  <button style={{ ...S.btnDanger, ...S.btnFull }} onClick={() => deleteToken(t.id, t.symbol)}>
-                    Löschen
-                  </button>
+                  <button style={{ ...S.btnDanger, ...S.btnFull }} onClick={() => deleteToken(t.id, t.symbol)}>Löschen</button>
                 </div>
 
                 {editingId === t.id && (
@@ -948,9 +765,7 @@ export default function DashboardPage() {
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                       <h2 style={S.formTitle}>Token bearbeiten</h2>
                       <div style={S.row}>
-                        <button style={S.btnDark} onClick={() => resetEditForm()}>
-                          Schließen
-                        </button>
+                        <button style={S.btnDark} onClick={() => resetEditForm()}>Schließen</button>
                       </div>
                     </div>
 
@@ -958,31 +773,13 @@ export default function DashboardPage() {
                     <input style={S.input} value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="BTC" />
 
                     <div style={S.label}>Durchschnitt (Info)</div>
-                    <input
-                      style={S.input}
-                      value={avg}
-                      onChange={(e) => setAvg(e.target.value)}
-                      placeholder="0.12345678"
-                      inputMode="decimal"
-                    />
+                    <input style={S.input} value={avg} onChange={(e) => setAvg(e.target.value)} placeholder="0.12345678" inputMode="decimal" />
 
                     <div style={S.label}>Entry (aktiv) manuell</div>
-                    <input
-                      style={S.input}
-                      value={entry}
-                      onChange={(e) => setEntry(e.target.value)}
-                      placeholder="0.05000000"
-                      inputMode="decimal"
-                    />
+                    <input style={S.input} value={entry} onChange={(e) => setEntry(e.target.value)} placeholder="0.05000000" inputMode="decimal" />
 
                     <div style={S.label}>Best Buy</div>
-                    <input
-                      style={S.input}
-                      value={bestBuy}
-                      onChange={(e) => setBestBuy(e.target.value)}
-                      placeholder="0.04500000"
-                      inputMode="decimal"
-                    />
+                    <input style={S.input} value={bestBuy} onChange={(e) => setBestBuy(e.target.value)} placeholder="0.04500000" inputMode="decimal" />
 
                     <div style={S.label}>Exit 1 in % (z.B. 25 für +25%)</div>
                     <input style={S.input} value={exit1} onChange={(e) => setExit1(e.target.value)} placeholder="25" />
@@ -1007,9 +804,7 @@ export default function DashboardPage() {
             <div style={S.overlayCard} onClick={(e) => e.stopPropagation()}>
               <div style={S.overlayTitleRow}>
                 <h3 style={S.overlayTitle}>TOKENS</h3>
-                <button style={S.btnDark} onClick={() => setOpenTokenList(false)}>
-                  Schließen
-                </button>
+                <button style={S.btnDark} onClick={() => setOpenTokenList(false)}>Schließen</button>
               </div>
 
               <div style={S.tokenList}>
