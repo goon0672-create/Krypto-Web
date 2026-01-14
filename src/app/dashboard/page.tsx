@@ -64,7 +64,8 @@ function fmtSmart(v: number | null | undefined) {
   return v.toFixed(12);
 }
 
-function fmtFixed(v: number | null | undefined, digits = 6) {
+// ✅ FIX: default digits = 8 (avg_price / best_buy_price sollen 8 anzeigen können)
+function fmtFixed(v: number | null | undefined, digits = 8) {
   if (typeof v !== "number" || !Number.isFinite(v)) return "-";
   return v.toFixed(digits);
 }
@@ -77,13 +78,13 @@ function fmtPctSigned(v: number | null | undefined, digits = 2) {
 }
 
 function normClass(s: string | null | undefined) {
-  return String(s ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+  return String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function fgiLabelAndInvestPct(value: number | null | undefined, classification: string | null | undefined) {
+function fgiLabelAndInvestPct(
+  value: number | null | undefined,
+  classification: string | null | undefined
+) {
   const v = typeof value === "number" && Number.isFinite(value) ? value : null;
   const c = normClass(classification);
 
@@ -167,7 +168,9 @@ export default function DashboardPage() {
   const [openFgi, setOpenFgi] = useState<Record<string, boolean>>({});
   const [fgiBusy, setFgiBusy] = useState<Record<string, boolean>>({});
   const [fgiErr, setFgiErr] = useState<Record<string, string | null>>({});
-  const [fgiData, setFgiData] = useState<Record<string, { value: number; classification: string } | null>>({});
+  const [fgiData, setFgiData] = useState<
+    Record<string, { value: number; classification: string } | null>
+  >({});
 
   // TOKENS overlay (list)
   const [openTokenList, setOpenTokenList] = useState(false);
@@ -255,7 +258,13 @@ export default function DashboardPage() {
     },
 
     headRow: { display: "flex", gap: 14, alignItems: "center" },
-    dot: { width: 16, height: 16, borderRadius: 999, background: "#22c55e", boxShadow: "0 0 0 6px rgba(34,197,94,0.12)" },
+    dot: {
+      width: 16,
+      height: 16,
+      borderRadius: 999,
+      background: "#22c55e",
+      boxShadow: "0 0 0 6px rgba(34,197,94,0.12)",
+    },
     ok: { color: "#22c55e", fontWeight: 900, fontSize: 20 },
 
     symbol: { color: "#fff", fontSize: 34, fontWeight: 900, marginTop: 2 },
@@ -272,7 +281,13 @@ export default function DashboardPage() {
     btnFull: { width: "100%", display: "flex", justifyContent: "center", alignItems: "center" },
 
     entryBox: { marginTop: 12, paddingTop: 8 },
-    entryTitleRow: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" as const },
+    entryTitleRow: {
+      display: "flex",
+      justifyContent: "space-between",
+      gap: 12,
+      alignItems: "center",
+      flexWrap: "wrap" as const,
+    },
     entryTitle: { color: "#fff", fontSize: 22, fontWeight: 900, margin: 0 },
     entryRecalcBtn: {
       backgroundColor: "#0f172a",
@@ -422,7 +437,6 @@ export default function DashboardPage() {
       return;
     }
 
-    // Tokens (inkl cmc_id) holen
     const { data: rows, error: tokErr } = await supabase.from("tokens").select("id, cmc_id");
     if (tokErr) {
       setErr(tokErr.message);
@@ -433,7 +447,6 @@ export default function DashboardPage() {
       (r: any) => Number.isFinite(Number(r.cmc_id)) && Number(r.cmc_id) > 0
     );
 
-    // nichts zu tun -> normal reload
     if (!tokensWithId.length) {
       await load();
       return;
@@ -441,8 +454,8 @@ export default function DashboardPage() {
 
     const cmcIds = Array.from(new Set(tokensWithId.map((r: any) => Number(r.cmc_id))));
 
-    // WICHTIG: diese Edge Function muss existieren
-    const fnUrl = `${supabaseUrl}/functions/v1/cmc-prices-by-ids`;
+    // ✅ du hast gesagt: cmc-prices-ids (nicht by-ids)
+    const fnUrl = `${supabaseUrl}/functions/v1/cmc-prices-ids`;
 
     const res = await fetch(fnUrl, {
       method: "POST",
@@ -465,15 +478,10 @@ export default function DashboardPage() {
     const prices: Record<string, number> = out?.prices || {};
     const now = new Date().toISOString();
 
-    // Tokens updaten
     for (const t of tokensWithId) {
       const p = prices[String(t.cmc_id)];
       if (typeof p === "number" && Number.isFinite(p)) {
-        const { error } = await supabase
-          .from("tokens")
-          .update({ last_price: p, last_calc_at: now })
-          .eq("id", t.id);
-
+        const { error } = await supabase.from("tokens").update({ last_price: p, last_calc_at: now }).eq("id", t.id);
         if (error) {
           setErr(`Update failed (${t.id}): ${error.message}`);
           break;
@@ -552,7 +560,6 @@ export default function DashboardPage() {
       best_buy_price: bbN,
       exit1_pct: ex1N,
     };
-
     if (entryN != null) payload.active_entry_label = "MANUELL";
 
     const res = await supabase.from("tokens").update(payload).eq("id", editingId);
@@ -639,7 +646,6 @@ export default function DashboardPage() {
 
   async function adoptEntry(t: TokenRow, which: "EX1" | "EX2" | "EX3") {
     const id = t.id;
-
     const pick = which === "EX1" ? t.ex1_entry : which === "EX2" ? t.ex2_entry : t.ex3_entry;
 
     if (typeof pick !== "number" || !Number.isFinite(pick)) {
@@ -651,10 +657,7 @@ export default function DashboardPage() {
 
     const res = await supabase
       .from("tokens")
-      .update({
-        entry_price: pick,
-        active_entry_label: which,
-      })
+      .update({ entry_price: pick, active_entry_label: which })
       .eq("id", id);
 
     if (res.error) {
@@ -749,7 +752,6 @@ export default function DashboardPage() {
               Explore
             </button>
 
-            {/* ✅ Reload macht jetzt: Preise aktualisieren + danach Tokens laden */}
             <button style={S.btnDark} onClick={refreshPricesAndReload}>
               Reload
             </button>
@@ -805,7 +807,8 @@ export default function DashboardPage() {
 
                   <div>
                     <span style={S.k}>Durchschnitt:</span>{" "}
-                    <span style={S.v}>{t.avg_price == null ? "-" : fmtFixed(t.avg_price, 6)}</span>
+                    {/* ✅ FIX: 8 Nachkommastellen */}
+                    <span style={S.v}>{t.avg_price == null ? "-" : fmtFixed(t.avg_price, 8)}</span>
                   </div>
 
                   <div style={S.strongLine}>
@@ -818,7 +821,8 @@ export default function DashboardPage() {
 
                   <div>
                     <span style={S.k}>Best Buy:</span>{" "}
-                    <span style={S.v}>{t.best_buy_price == null ? "-" : fmtFixed(t.best_buy_price, 6)}</span>
+                    {/* ✅ FIX: 8 Nachkommastellen */}
+                    <span style={S.v}>{t.best_buy_price == null ? "-" : fmtFixed(t.best_buy_price, 8)}</span>
                   </div>
 
                   <div>
@@ -954,13 +958,34 @@ export default function DashboardPage() {
                     <input style={S.input} value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="BTC" />
 
                     <div style={S.label}>Durchschnitt (Info)</div>
-                    <input style={S.input} value={avg} onChange={(e) => setAvg(e.target.value)} placeholder="0.123" />
+                    <input
+                      style={S.input}
+                      value={avg}
+                      onChange={(e) => setAvg(e.target.value)}
+                      placeholder="0.12345678"
+                      inputMode="decimal"
+                      step="0.00000001"
+                    />
 
                     <div style={S.label}>Entry (aktiv) manuell</div>
-                    <input style={S.input} value={entry} onChange={(e) => setEntry(e.target.value)} placeholder="0.050" />
+                    <input
+                      style={S.input}
+                      value={entry}
+                      onChange={(e) => setEntry(e.target.value)}
+                      placeholder="0.05000000"
+                      inputMode="decimal"
+                      step="0.00000001"
+                    />
 
                     <div style={S.label}>Best Buy</div>
-                    <input style={S.input} value={bestBuy} onChange={(e) => setBestBuy(e.target.value)} placeholder="0.045" />
+                    <input
+                      style={S.input}
+                      value={bestBuy}
+                      onChange={(e) => setBestBuy(e.target.value)}
+                      placeholder="0.04500000"
+                      inputMode="decimal"
+                      step="0.00000001"
+                    />
 
                     <div style={S.label}>Exit 1 in % (z.B. 25 für +25%)</div>
                     <input style={S.input} value={exit1} onChange={(e) => setExit1(e.target.value)} placeholder="25" />
