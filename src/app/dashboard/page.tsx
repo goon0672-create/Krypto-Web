@@ -64,7 +64,7 @@ function fmtSmart(v: number | null | undefined) {
   return v.toFixed(12);
 }
 
-// ✅ default digits = 8 (avg_price / best_buy_price)
+// ✅ default digits = 8 (avg_price / best_buy_price sollen 8 anzeigen können)
 function fmtFixed(v: number | null | undefined, digits = 8) {
   if (typeof v !== "number" || !Number.isFinite(v)) return "-";
   return v.toFixed(digits);
@@ -81,7 +81,10 @@ function normClass(s: string | null | undefined) {
   return String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function fgiLabelAndInvestPct(value: number | null | undefined, classification: string | null | undefined) {
+function fgiLabelAndInvestPct(
+  value: number | null | undefined,
+  classification: string | null | undefined
+) {
   const v = typeof value === "number" && Number.isFinite(value) ? value : null;
   const c = normClass(classification);
 
@@ -165,7 +168,9 @@ export default function DashboardPage() {
   const [openFgi, setOpenFgi] = useState<Record<string, boolean>>({});
   const [fgiBusy, setFgiBusy] = useState<Record<string, boolean>>({});
   const [fgiErr, setFgiErr] = useState<Record<string, string | null>>({});
-  const [fgiData, setFgiData] = useState<Record<string, { value: number; classification: string } | null>>({});
+  const [fgiData, setFgiData] = useState<
+    Record<string, { value: number; classification: string } | null>
+  >({});
 
   // TOKENS overlay (list)
   const [openTokenList, setOpenTokenList] = useState(false);
@@ -414,25 +419,12 @@ export default function DashboardPage() {
     setLoading(false);
   }
 
-  // ✅ Reload Button: holt NUR Preise per Function und schreibt NUR last_price (+ last_calc_at)
-  // ✅ verwendet deine Function: cmc-prices-ids
+  // ✅ Reload: NUR Kurs aktualisieren (last_price + last_calc_at), KEIN EX1/2/3 Recalc.
+  //    Zeigt neuen Kurs sofort in UI; DB-Update wird versucht, kann aber an RLS scheitern -> dann klare Fehlermeldung.
   async function refreshPricesAndReload() {
     setErr(null);
 
-    const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
-    const anonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim();
-    if (!supabaseUrl || !anonKey) {
-      setErr("Env fehlt: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY");
-      return;
-    }
-
-    const { data: sess } = await supabase.auth.getSession();
-    const jwt = sess?.session?.access_token;
-    if (!jwt) {
-      setErr("Nicht eingeloggt.");
-      return;
-    }
-
+    // Tokens (inkl cmc_id) holen
     const { data: rows, error: tokErr } = await supabase.from("tokens").select("id, cmc_id");
     if (tokErr) {
       setErr(tokErr.message);
@@ -449,44 +441,52 @@ export default function DashboardPage() {
     }
 
     const cmcIds = Array.from(new Set(tokensWithId.map((r: any) => Number(r.cmc_id))));
-    const fnUrl = `${supabaseUrl}/functions/v1/cmc-prices-ids`;
 
-    const res = await fetch(fnUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${jwt}`,
-        apikey: anonKey,
-      },
-      body: JSON.stringify({ cmc_ids: cmcIds }),
+    // ✅ Function invoke (JWT automatisch)
+    const { data, error } = await supabase.functions.invoke("cmc-prices-ids", {
+      body: { cmc_ids: cmcIds },
     });
 
-    const out = await res.json().catch(() => ({} as any));
-
-    if (!res.ok || !out?.ok) {
-      setErr(out?.error ? String(out.error) : `Preis-Update fehlgeschlagen (HTTP ${res.status})`);
+    if (error) {
+      setErr(`cmc-prices-ids Fehler: ${error.message}`);
       await load();
       return;
     }
 
-    const prices: Record<string, number> = out?.prices || {};
+    if (!data?.ok) {
+      setErr(data?.error ? String(data.error) : "cmc-prices-ids: Antwort ohne ok=true");
+      await load();
+      return;
+    }
+
+    const prices: Record<string, number> = data?.prices || {};
     const now = new Date().toISOString();
 
-    // ✅ Bulk-Upsert: schnell und schreibt nur last_price/last_calc_at
-    const updates = tokensWithId
-      .map((t: any) => {
-        const p = prices[String(t.cmc_id)];
-        if (typeof p !== "number" || !Number.isFinite(p)) return null;
-        return { id: t.id, last_price: p, last_calc_at: now };
+    // 1) Sofort in UI setzen
+    setTokens((prev) =>
+      prev.map((t) => {
+        const id = Number((t as any).cmc_id);
+        const p = prices[String(id)];
+        if (typeof p === "number" && Number.isFinite(p)) {
+          return { ...t, last_price: p, last_calc_at: now };
+        }
+        return t;
       })
-      .filter(Boolean) as Array<{ id: string; last_price: number; last_calc_at: string }>;
+    );
 
-    if (updates.length) {
-      const { error: upErr } = await supabase.from("tokens").upsert(updates, { onConflict: "id" });
-      if (upErr) {
-        setErr(`Bulk update failed: ${upErr.message}`);
-        await load();
-        return;
+    // 2) DB Update versuchen (wenn RLS erlaubt)
+    for (const t of tokensWithId) {
+      const p = prices[String(t.cmc_id)];
+      if (typeof p === "number" && Number.isFinite(p)) {
+        const { error: upErr } = await supabase
+          .from("tokens")
+          .update({ last_price: p, last_calc_at: now })
+          .eq("id", t.id);
+
+        if (upErr) {
+          setErr(`Preis in UI aktualisiert, aber DB-Update blockiert (RLS/Policy): ${upErr.message}`);
+          break;
+        }
       }
     }
 
@@ -656,7 +656,10 @@ export default function DashboardPage() {
 
     setEntryErr((p) => ({ ...p, [id]: null }));
 
-    const res = await supabase.from("tokens").update({ entry_price: pick, active_entry_label: which }).eq("id", id);
+    const res = await supabase
+      .from("tokens")
+      .update({ entry_price: pick, active_entry_label: which })
+      .eq("id", id);
 
     if (res.error) {
       setEntryErr((p) => ({ ...p, [id]: res.error.message }));
@@ -750,6 +753,7 @@ export default function DashboardPage() {
               Explore
             </button>
 
+            {/* ✅ Reload: nur Preise */}
             <button style={S.btnDark} onClick={refreshPricesAndReload}>
               Reload
             </button>
@@ -899,9 +903,7 @@ export default function DashboardPage() {
                             <div style={S.entryName}>{name}:</div>
                             <div style={S.entryVal}>
                               {price == null ? "-" : fmtSmart(price)}{" "}
-                              <span style={S.entryPct}>
-                                {pct == null ? "" : `(${fmtPctSigned(-Math.abs(pct), 2)})`}
-                              </span>
+                              <span style={S.entryPct}>{pct == null ? "" : `(${fmtPctSigned(-Math.abs(pct), 2)})`}</span>
                             </div>
                             <button style={S.entryUseBtn} onClick={() => adoptEntry(t, name)}>
                               Übernehmen
