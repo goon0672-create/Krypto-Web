@@ -824,10 +824,21 @@ export default function DashboardPage() {
   style={S.tokenItemBtn}
   onClick={() => jumpToToken(t.id)}
 >
-  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    {/* Token Name */}
     <div style={{ fontWeight: 900 }}>{t.symbol}</div>
 
-    <div style={{ fontSize: 13, color: "#94a3b8" }}>
+    {/* EINZEILIGER INFO-ROW */}
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        fontSize: 13,
+        color: "#94a3b8",
+        whiteSpace: "nowrap",
+      }}
+    >
       <span>
         Live:{" "}
         <b style={{ color: "#e2e8f0" }}>
@@ -835,7 +846,7 @@ export default function DashboardPage() {
         </b>
       </span>
 
-      {"  ·  "}
+      <span>·</span>
 
       <span>
         BB:{" "}
@@ -844,10 +855,11 @@ export default function DashboardPage() {
         </b>
       </span>
 
-      {"  ·  "}
+      <span>·</span>
 
       <span
         style={{
+          fontWeight: 900,
           color:
             t.last_price != null &&
             t.best_buy_price != null &&
@@ -855,7 +867,6 @@ export default function DashboardPage() {
             t.last_price >= t.best_buy_price
               ? "#22c55e"
               : "#ef4444",
-          fontWeight: 900,
         }}
       >
         {t.last_price != null &&
