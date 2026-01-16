@@ -808,12 +808,44 @@ export default function DashboardPage() {
               </div>
 
               <div style={S.tokenList}>
-                {sorted.map((t) => (
-                  <button key={t.id} style={S.tokenItemBtn} onClick={() => jumpToToken(t.id)}>
-                    {t.symbol}
-                  </button>
-                ))}
-              </div>
+  {sorted.map((t) => {
+    const live = typeof t.last_price === "number" ? t.last_price : null;
+    const bb = typeof t.best_buy_price === "number" ? t.best_buy_price : null;
+
+    const pct =
+      live != null && bb != null && bb !== 0 ? ((live - bb) / bb) * 100 : null;
+
+    const pctColor =
+      pct == null ? "#94a3b8" : pct >= 0 ? "#22c55e" : "#ef4444";
+
+    return (
+      <button
+        key={t.id}
+        style={S.tokenItemBtn}
+        onClick={() => jumpToToken(t.id)}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ fontWeight: 900 }}>{t.symbol}</div>
+
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ color: "#cbd5e1", fontWeight: 900 }}>
+              {live == null ? "-" : fmtSmart(live)}
+            </div>
+
+            <div style={{ color: "#94a3b8", fontWeight: 900 }}>
+              BB {bb == null ? "-" : fmtFixed(bb, 8)}
+            </div>
+
+            <div style={{ color: pctColor, fontWeight: 900, minWidth: 72, textAlign: "right" }}>
+              {pct == null ? "-" : fmtPctSigned(pct, 2)}
+            </div>
+          </div>
+        </div>
+      </button>
+    );
+  })}
+</div>
+
             </div>
           </div>
         )}
