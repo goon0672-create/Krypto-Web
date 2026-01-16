@@ -820,28 +820,54 @@ export default function DashboardPage() {
 
     return (
       <button
-        key={t.id}
-        style={S.tokenItemBtn}
-        onClick={() => jumpToToken(t.id)}
+  key={t.id}
+  style={S.tokenItemBtn}
+  onClick={() => jumpToToken(t.id)}
+>
+  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <div style={{ fontWeight: 900 }}>{t.symbol}</div>
+
+    <div style={{ fontSize: 13, color: "#94a3b8" }}>
+      <span>
+        Live:{" "}
+        <b style={{ color: "#e2e8f0" }}>
+          {t.last_price == null ? "-" : fmtFixed(t.last_price, 8)}
+        </b>
+      </span>
+
+      {"  ·  "}
+
+      <span>
+        BB:{" "}
+        <b style={{ color: "#e2e8f0" }}>
+          {t.best_buy_price == null ? "-" : fmtFixed(t.best_buy_price, 8)}
+        </b>
+      </span>
+
+      {"  ·  "}
+
+      <span
+        style={{
+          color:
+            t.last_price != null &&
+            t.best_buy_price != null &&
+            t.best_buy_price !== 0 &&
+            t.last_price >= t.best_buy_price
+              ? "#22c55e"
+              : "#ef4444",
+          fontWeight: 900,
+        }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-          <div style={{ fontWeight: 900 }}>{t.symbol}</div>
+        {t.last_price != null &&
+        t.best_buy_price != null &&
+        t.best_buy_price !== 0
+          ? `${(((t.last_price - t.best_buy_price) / t.best_buy_price) * 100).toFixed(2)}%`
+          : "-"}
+      </span>
+    </div>
+  </div>
+</button>
 
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <div style={{ color: "#cbd5e1", fontWeight: 900 }}>
-              {live == null ? "-" : fmtSmart(live)}
-            </div>
-
-            <div style={{ color: "#94a3b8", fontWeight: 900 }}>
-              BB {bb == null ? "-" : fmtFixed(bb, 8)}
-            </div>
-
-            <div style={{ color: pctColor, fontWeight: 900, minWidth: 72, textAlign: "right" }}>
-              {pct == null ? "-" : fmtPctSigned(pct, 2)}
-            </div>
-          </div>
-        </div>
-      </button>
     );
   })}
 </div>
