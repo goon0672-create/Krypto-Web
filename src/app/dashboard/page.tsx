@@ -932,7 +932,7 @@ export default function DashboardPage() {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "space-between",
+                    /*justifyContent: "space-between",*/
                     gap: 10,
                   }}
                 >
