@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabase";
 
 type TokenRow = {
   id: string;
+  user_id?: string | null;
+
   symbol: string;
   avg_price: number | null;
   entry_price: number | null;
@@ -25,6 +27,9 @@ type TokenRow = {
   ex3_pct?: number | null;
 
   cmc_id?: number | null;
+
+  // ✅ NEU
+  order_set?: boolean | null;
 };
 
 type EntrySuggestion = { name: "EX1" | "EX2" | "EX3"; price: number; pctUnderLive: number };
@@ -67,7 +72,10 @@ function fmtPctSigned(v: number | null | undefined, digits = 2) {
 }
 
 function normClass(s: string | null | undefined) {
-  return String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
 function fgiLabelAndInvestPct(value: number | null | undefined, classification: string | null | undefined) {
@@ -143,6 +151,9 @@ export default function DashboardPage() {
   const [entry, setEntry] = useState("");
   const [bestBuy, setBestBuy] = useState("");
   const [exit1, setExit1] = useState("");
+
+  // ✅ NEU: Checkbox-State
+  const [orderSet, setOrderSet] = useState(false);
 
   const [openEntry, setOpenEntry] = useState<Record<string, boolean>>({});
   const [entryBusy, setEntryBusy] = useState<Record<string, boolean>>({});
@@ -333,8 +344,27 @@ export default function DashboardPage() {
     },
     overlayTitleRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 },
     overlayTitle: { color: "#fff", fontSize: 18, fontWeight: 900, margin: 0 },
-    tokenList: { marginTop: 12, display: "grid", gap: 10, overflowY: "auto", flex: "1 1 auto", minHeight: 0, paddingRight: 4, WebkitOverflowScrolling: "touch" },
-    tokenItemBtn: { width: "100%", backgroundColor: "#0f172a", border: "1px solid #1f2937", color: "#fff", padding: "12px 14px", borderRadius: 14, cursor: "pointer", fontWeight: 900, textAlign: "left" as const },
+    tokenList: {
+      marginTop: 12,
+      display: "grid",
+      gap: 10,
+      overflowY: "auto",
+      flex: "1 1 auto",
+      minHeight: 0,
+      paddingRight: 4,
+      WebkitOverflowScrolling: "touch",
+    },
+    tokenItemBtn: {
+      width: "100%",
+      backgroundColor: "#0f172a",
+      border: "1px solid #1f2937",
+      color: "#fff",
+      padding: "12px 14px",
+      borderRadius: 14,
+      cursor: "pointer",
+      fontWeight: 900,
+      textAlign: "left" as const,
+    },
   };
 
   async function load() {
@@ -350,7 +380,7 @@ export default function DashboardPage() {
     const { data, error } = await supabase
       .from("tokens")
       .select(
-        "id,symbol,cmc_id,avg_price,entry_price,best_buy_price,exit1_pct,trend,last_price,last_calc_at,active_entry_label,created_at,ex1_entry,ex2_entry,ex3_entry,ex1_pct,ex2_pct,ex3_pct"
+        "id,symbol,cmc_id,avg_price,entry_price,best_buy_price,exit1_pct,trend,last_price,last_calc_at,active_entry_label,created_at,ex1_entry,ex2_entry,ex3_entry,ex1_pct,ex2_pct,ex3_pct,order_set"
       )
       .order("symbol", { ascending: true });
 
@@ -402,6 +432,7 @@ export default function DashboardPage() {
     setEntry("");
     setBestBuy("");
     setExit1("");
+    setOrderSet(false); // ✅ NEU
   }
 
   function startAdd() {
@@ -416,6 +447,7 @@ export default function DashboardPage() {
     setEntry(t.entry_price != null ? String(t.entry_price) : "");
     setBestBuy(t.best_buy_price != null ? String(t.best_buy_price) : "");
     setExit1(t.exit1_pct != null ? String(t.exit1_pct) : "");
+    setOrderSet(!!t.order_set); // ✅ NEU
     setErr(null);
 
     setTimeout(() => {
@@ -446,6 +478,7 @@ export default function DashboardPage() {
       entry_price: entryN,
       best_buy_price: bbN,
       exit1_pct: ex1N,
+      order_set: !!orderSet, // ✅ NEU
     };
     if (entryN != null) payload.active_entry_label = "MANUELL";
 
@@ -609,12 +642,22 @@ export default function DashboardPage() {
           </div>
 
           <div style={S.row}>
-            <button style={S.btnMid} onClick={() => setOpenTokenList(true)}>TOKENS</button>
-            <button style={S.btnPrimary} onClick={startAdd}>Token erfassen</button>
-            <button style={S.btnMid} onClick={() => router.push("/explore")}>Explore</button>
+            <button style={S.btnMid} onClick={() => setOpenTokenList(true)}>
+              TOKENS
+            </button>
+            <button style={S.btnPrimary} onClick={startAdd}>
+              Token erfassen
+            </button>
+            <button style={S.btnMid} onClick={() => router.push("/explore")}>
+              Explore
+            </button>
 
-            <button style={S.btnDark} onClick={refreshPricesAndReload}>Reload</button>
-            <button style={S.btnDark} onClick={logout}>Logout</button>
+            <button style={S.btnDark} onClick={refreshPricesAndReload}>
+              Reload
+            </button>
+            <button style={S.btnDark} onClick={logout}>
+              Logout
+            </button>
           </div>
         </div>
 
@@ -645,7 +688,9 @@ export default function DashboardPage() {
               <div
                 key={t.id}
                 style={{ ...S.card, ...(isFlash ? S.cardFlash : null) }}
-                ref={(el) => { cardRefs.current[t.id] = el; }}
+                ref={(el) => {
+                  cardRefs.current[t.id] = el;
+                }}
               >
                 <div style={S.symbol}>{t.symbol}</div>
 
@@ -655,7 +700,9 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={S.kv}>
-                  <div><span style={S.k}>Live:</span> <span style={S.v}>{fmtSmart(t.last_price)}</span></div>
+                  <div>
+                    <span style={S.k}>Live:</span> <span style={S.v}>{fmtSmart(t.last_price)}</span>
+                  </div>
 
                   <div>
                     <span style={S.k}>Durchschnitt:</span>{" "}
@@ -682,8 +729,21 @@ export default function DashboardPage() {
                     </span>
                   </div>
 
-                  <div><span style={S.k}>Exit 1:</span> <span style={S.v}>{t.exit1_pct == null ? "-" : fmtPctSigned(t.exit1_pct, 2)}</span></div>
-                  <div><span style={S.k}>Trend:</span> <span style={S.v}>{t.trend ?? "-"}</span></div>
+                  <div>
+                    <span style={S.k}>Exit 1:</span>{" "}
+                    <span style={S.v}>{t.exit1_pct == null ? "-" : fmtPctSigned(t.exit1_pct, 2)}</span>
+                  </div>
+                  <div>
+                    <span style={S.k}>Trend:</span> <span style={S.v}>{t.trend ?? "-"}</span>
+                  </div>
+
+                  {/* ✅ Optional: Anzeige im Card-Info-Bereich */}
+                  <div>
+                    <span style={S.k}>Order gesetzt:</span>{" "}
+                    <span style={{ ...S.v, color: t.order_set ? "#22c55e" : "#94a3b8" }}>
+                      {t.order_set ? "Ja" : "Nein"}
+                    </span>
+                  </div>
                 </div>
 
                 <div style={S.divider} />
@@ -701,9 +761,18 @@ export default function DashboardPage() {
 
                     {fgi && investInfo && (
                       <div style={S.fgiRow}>
-                        <div><span style={S.k}>Fear &amp; Greed Index:</span> <span style={S.fgiValue}>{Math.round(fgi.value)}</span></div>
-                        <div><span style={S.k}>Phase:</span> <span style={{ fontWeight: 900, color: investInfo.color }}>{investInfo.phase}</span></div>
-                        <div><span style={S.k}>Invest (Empfehlung):</span> <span style={{ fontWeight: 900, color: investInfo.color }}>{investInfo.investText}</span></div>
+                        <div>
+                          <span style={S.k}>Fear &amp; Greed Index:</span>{" "}
+                          <span style={S.fgiValue}>{Math.round(fgi.value)}</span>
+                        </div>
+                        <div>
+                          <span style={S.k}>Phase:</span>{" "}
+                          <span style={{ fontWeight: 900, color: investInfo.color }}>{investInfo.phase}</span>
+                        </div>
+                        <div>
+                          <span style={S.k}>Invest (Empfehlung):</span>{" "}
+                          <span style={{ fontWeight: 900, color: investInfo.color }}>{investInfo.investText}</span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -732,7 +801,9 @@ export default function DashboardPage() {
                               {price == null ? "-" : fmtSmart(price)}{" "}
                               <span style={S.entryPct}>{pct == null ? "" : `(${fmtPctSigned(-Math.abs(pct), 2)})`}</span>
                             </div>
-                            <button style={S.entryUseBtn} onClick={() => adoptEntry(t, name)}>Übernehmen</button>
+                            <button style={S.entryUseBtn} onClick={() => adoptEntry(t, name)}>
+                              Übernehmen
+                            </button>
                           </div>
                         );
                       })}
@@ -753,11 +824,15 @@ export default function DashboardPage() {
                     {fgiBusy[t.id] ? "FGI…" : isFgiOpen ? "FGI schließen" : "FGI"}
                   </button>
 
-                  <button style={{ ...S.btnPrimary, ...S.btnFull }} onClick={() => startEditInline(t)}>Bearbeiten</button>
+                  <button style={{ ...S.btnPrimary, ...S.btnFull }} onClick={() => startEditInline(t)}>
+                    Bearbeiten
+                  </button>
                   <button style={{ ...S.btnMid, ...S.btnFull }} onClick={() => toggleEntry(t.id)}>
                     {isEntryOpen ? "Entry-Vorschläge schließen" : "Entry-Vorschläge"}
                   </button>
-                  <button style={{ ...S.btnDanger, ...S.btnFull }} onClick={() => deleteToken(t.id, t.symbol)}>Löschen</button>
+                  <button style={{ ...S.btnDanger, ...S.btnFull }} onClick={() => deleteToken(t.id, t.symbol)}>
+                    Löschen
+                  </button>
                 </div>
 
                 {editingId === t.id && (
@@ -765,7 +840,9 @@ export default function DashboardPage() {
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                       <h2 style={S.formTitle}>Token bearbeiten</h2>
                       <div style={S.row}>
-                        <button style={S.btnDark} onClick={() => resetEditForm()}>Schließen</button>
+                        <button style={S.btnDark} onClick={() => resetEditForm()}>
+                          Schließen
+                        </button>
                       </div>
                     </div>
 
@@ -783,6 +860,26 @@ export default function DashboardPage() {
 
                     <div style={S.label}>Exit 1 in % (z.B. 25 für +25%)</div>
                     <input style={S.input} value={exit1} onChange={(e) => setExit1(e.target.value)} placeholder="25" />
+
+                    {/* ✅ NEU: Order gesetzt Zeile + Checkbox */}
+                    <div
+                      style={{
+                        marginTop: 14,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 12,
+                      }}
+                    >
+                      <div style={{ color: "#cbd5e1", fontWeight: 800 }}>Order gesetzt</div>
+
+                      <input
+                        type="checkbox"
+                        checked={orderSet}
+                        onChange={(e) => setOrderSet(e.target.checked)}
+                        style={{ width: 20, height: 20, cursor: "pointer" }}
+                      />
+                    </div>
 
                     <div style={{ ...S.row, marginTop: 12 }}>
                       <button style={S.btnPrimary} disabled={saving} onClick={saveTokenInline}>
@@ -804,85 +901,69 @@ export default function DashboardPage() {
             <div style={S.overlayCard} onClick={(e) => e.stopPropagation()}>
               <div style={S.overlayTitleRow}>
                 <h3 style={S.overlayTitle}>TOKENS</h3>
-                <button style={S.btnDark} onClick={() => setOpenTokenList(false)}>Schließen</button>
+                <button style={S.btnDark} onClick={() => setOpenTokenList(false)}>
+                  Schließen
+                </button>
               </div>
 
               <div style={S.tokenList}>
-  {sorted.map((t) => {
-    const live = typeof t.last_price === "number" ? t.last_price : null;
-    const bb = typeof t.best_buy_price === "number" ? t.best_buy_price : null;
+                {sorted.map((t) => {
+                  const live = typeof t.last_price === "number" ? t.last_price : null;
+                  const bb = typeof t.best_buy_price === "number" ? t.best_buy_price : null;
 
-    const pct =
-      live != null && bb != null && bb !== 0 ? ((live - bb) / bb) * 100 : null;
+                  const pct = live != null && bb != null && bb !== 0 ? ((live - bb) / bb) * 100 : null;
 
-    const pctColor =
-      pct == null ? "#94a3b8" : pct >= 0 ? "#22c55e" : "#ef4444";
+                  return (
+                    <button key={t.id} style={S.tokenItemBtn} onClick={() => jumpToToken(t.id)}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ fontWeight: 900 }}>{t.symbol}</div>
 
-    return (
-      <button
-  key={t.id}
-  style={S.tokenItemBtn}
-  onClick={() => jumpToToken(t.id)}
->
-  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-    {/* Token Name */}
-    <div style={{ fontWeight: 900 }}>{t.symbol}</div>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            fontSize: 13,
+                            color: "#94a3b8",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          <span>
+                            Live:{" "}
+                            <b style={{ color: "#e2e8f0" }}>{t.last_price == null ? "-" : fmtFixed(t.last_price, 8)}</b>
+                          </span>
 
-    {/* EINZEILIGER INFO-ROW */}
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        fontSize: 13,
-        color: "#94a3b8",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span>
-        Live:{" "}
-        <b style={{ color: "#e2e8f0" }}>
-          {t.last_price == null ? "-" : fmtFixed(t.last_price, 8)}
-        </b>
-      </span>
+                          <span>·</span>
 
-      <span>·</span>
+                          <span>
+                            BB:{" "}
+                            <b style={{ color: "#e2e8f0" }}>
+                              {t.best_buy_price == null ? "-" : fmtFixed(t.best_buy_price, 8)}
+                            </b>
+                          </span>
 
-      <span>
-        BB:{" "}
-        <b style={{ color: "#e2e8f0" }}>
-          {t.best_buy_price == null ? "-" : fmtFixed(t.best_buy_price, 8)}
-        </b>
-      </span>
+                          <span>·</span>
 
-      <span>·</span>
-
-      <span
-        style={{
-          fontWeight: 900,
-          color:
-            t.last_price != null &&
-            t.best_buy_price != null &&
-            t.best_buy_price !== 0 &&
-            t.last_price >= t.best_buy_price
-              ? "#22c55e"
-              : "#ef4444",
-        }}
-      >
-        {t.last_price != null &&
-        t.best_buy_price != null &&
-        t.best_buy_price !== 0
-          ? `${(((t.last_price - t.best_buy_price) / t.best_buy_price) * 100).toFixed(2)}%`
-          : "-"}
-      </span>
-    </div>
-  </div>
-</button>
-
-    );
-  })}
-</div>
-
+                          <span
+                            style={{
+                              fontWeight: 900,
+                              color:
+                                t.last_price != null &&
+                                t.best_buy_price != null &&
+                                t.best_buy_price !== 0 &&
+                                t.last_price >= t.best_buy_price
+                                  ? "#22c55e"
+                                  : "#ef4444",
+                            }}
+                          >
+                            {pct != null ? `${pct.toFixed(2)}%` : "-"}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
