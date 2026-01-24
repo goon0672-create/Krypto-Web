@@ -28,7 +28,6 @@ type TokenRow = {
 
   cmc_id?: number | null;
 
-  // ✅ NEU
   order_set?: boolean | null;
 };
 
@@ -152,7 +151,6 @@ export default function DashboardPage() {
   const [bestBuy, setBestBuy] = useState("");
   const [exit1, setExit1] = useState("");
 
-  // ✅ NEU: Checkbox-State
   const [orderSet, setOrderSet] = useState(false);
 
   const [openEntry, setOpenEntry] = useState<Record<string, boolean>>({});
@@ -168,6 +166,11 @@ export default function DashboardPage() {
 
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [flashId, setFlashId] = useState<string | null>(null);
+
+  // ✅ Account löschen (Dashboard)
+  const [openDeleteAccount, setOpenDeleteAccount] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const S: any = {
     page: { minHeight: "100vh", backgroundColor: "#020617" },
@@ -344,6 +347,7 @@ export default function DashboardPage() {
     },
     overlayTitleRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 },
     overlayTitle: { color: "#fff", fontSize: 18, fontWeight: 900, margin: 0 },
+
     tokenList: {
       marginTop: 12,
       display: "grid",
@@ -365,6 +369,15 @@ export default function DashboardPage() {
       fontWeight: 900,
       textAlign: "left" as const,
     },
+
+    // ✅ Delete Modal extras
+    dangerHint: {
+      marginTop: 10,
+      color: "#fca5a5",
+      fontWeight: 900,
+      lineHeight: 1.5,
+    },
+    miniText: { color: "#94a3b8", marginTop: 8, fontWeight: 800, fontSize: 13, lineHeight: 1.4 },
   };
 
   async function load() {
@@ -395,13 +408,10 @@ export default function DashboardPage() {
     setLoading(false);
   }
 
-  // ✅ Reload = NUR Preise (serverseitig), keine EX Berechnung
   async function refreshPricesAndReload() {
     setErr(null);
 
-    const { data, error } = await supabase.functions.invoke("cmc-reload-prices", {
-      body: {},
-    });
+    const { data, error } = await supabase.functions.invoke("cmc-reload-prices", { body: {} });
 
     if (error) {
       setErr(`cmc-reload-prices Fehler: ${error.message}`);
@@ -425,6 +435,32 @@ export default function DashboardPage() {
     router.replace("/login");
   }
 
+  // ✅ Account löschen (ruft Edge Function delete-account)
+  async function deleteAccountNow() {
+    const must = "LÖSCHEN";
+    if (deleteConfirmText.trim().toUpperCase() !== must) return;
+
+    setDeleteBusy(true);
+    setErr(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("delete-account", { body: {} });
+
+      if (error) throw new Error(error.message);
+      if (!data?.ok) throw new Error(data?.error ? String(data.error) : "delete-account: Antwort ohne ok=true");
+
+      // nach User-Delete ist die Session sowieso tot – aber sauber:
+      await supabase.auth.signOut();
+      router.replace("/login");
+    } catch (e: any) {
+      setErr(`Account löschen fehlgeschlagen: ${String(e?.message ?? e)}`);
+      setDeleteBusy(false);
+      return;
+    }
+
+    setDeleteBusy(false);
+  }
+
   function resetEditForm() {
     setEditingId(null);
     setSymbol("");
@@ -432,7 +468,7 @@ export default function DashboardPage() {
     setEntry("");
     setBestBuy("");
     setExit1("");
-    setOrderSet(false); // ✅ NEU
+    setOrderSet(false);
   }
 
   function startAdd() {
@@ -447,7 +483,7 @@ export default function DashboardPage() {
     setEntry(t.entry_price != null ? String(t.entry_price) : "");
     setBestBuy(t.best_buy_price != null ? String(t.best_buy_price) : "");
     setExit1(t.exit1_pct != null ? String(t.exit1_pct) : "");
-    setOrderSet(!!t.order_set); // ✅ NEU
+    setOrderSet(!!t.order_set);
     setErr(null);
 
     setTimeout(() => {
@@ -478,7 +514,7 @@ export default function DashboardPage() {
       entry_price: entryN,
       best_buy_price: bbN,
       exit1_pct: ex1N,
-      order_set: !!orderSet, // ✅ NEU
+      order_set: !!orderSet,
     };
     if (entryN != null) payload.active_entry_label = "MANUELL";
 
@@ -632,6 +668,8 @@ export default function DashboardPage() {
     }, 0);
   }
 
+  const canDeleteAccount = deleteConfirmText.trim().toUpperCase() === "LÖSCHEN";
+
   return (
     <div style={S.page}>
       <div style={S.wrap}>
@@ -657,6 +695,17 @@ export default function DashboardPage() {
             </button>
             <button style={S.btnDark} onClick={logout}>
               Logout
+            </button>
+
+            {/* ✅ NEU: Account löschen */}
+            <button
+              style={S.btnDanger}
+              onClick={() => {
+                setOpenDeleteAccount(true);
+                setDeleteConfirmText("");
+              }}
+            >
+              Account löschen
             </button>
           </div>
         </div>
@@ -737,7 +786,6 @@ export default function DashboardPage() {
                     <span style={S.k}>Trend:</span> <span style={S.v}>{t.trend ?? "-"}</span>
                   </div>
 
-                  {/* ✅ Optional: Anzeige im Card-Info-Bereich */}
                   <div>
                     <span style={S.k}>Order gesetzt:</span>{" "}
                     <span style={{ ...S.v, color: t.order_set ? "#22c55e" : "#94a3b8" }}>
@@ -850,18 +898,35 @@ export default function DashboardPage() {
                     <input style={S.input} value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="BTC" />
 
                     <div style={S.label}>Durchschnitt (Info)</div>
-                    <input style={S.input} value={avg} onChange={(e) => setAvg(e.target.value)} placeholder="0.12345678" inputMode="decimal" />
+                    <input
+                      style={S.input}
+                      value={avg}
+                      onChange={(e) => setAvg(e.target.value)}
+                      placeholder="0.12345678"
+                      inputMode="decimal"
+                    />
 
                     <div style={S.label}>Entry (aktiv) manuell</div>
-                    <input style={S.input} value={entry} onChange={(e) => setEntry(e.target.value)} placeholder="0.05000000" inputMode="decimal" />
+                    <input
+                      style={S.input}
+                      value={entry}
+                      onChange={(e) => setEntry(e.target.value)}
+                      placeholder="0.05000000"
+                      inputMode="decimal"
+                    />
 
                     <div style={S.label}>Best Buy</div>
-                    <input style={S.input} value={bestBuy} onChange={(e) => setBestBuy(e.target.value)} placeholder="0.04500000" inputMode="decimal" />
+                    <input
+                      style={S.input}
+                      value={bestBuy}
+                      onChange={(e) => setBestBuy(e.target.value)}
+                      placeholder="0.04500000"
+                      inputMode="decimal"
+                    />
 
                     <div style={S.label}>Exit 1 in % (z.B. 25 für +25%)</div>
                     <input style={S.input} value={exit1} onChange={(e) => setExit1(e.target.value)} placeholder="25" />
 
-                    {/* ✅ NEU: Order gesetzt Zeile + Checkbox */}
                     <div
                       style={{
                         marginTop: 14,
@@ -896,121 +961,158 @@ export default function DashboardPage() {
           })}
         </div>
 
-       {openTokenList && (
-  <div style={S.overlay} onClick={() => setOpenTokenList(false)}>
-    <div style={S.overlayCard} onClick={(e) => e.stopPropagation()}>
-      <div style={S.overlayTitleRow}>
-        <h3 style={S.overlayTitle}>TOKENS</h3>
-        <button style={S.btnDark} onClick={() => setOpenTokenList(false)}>
-          Schließen
-        </button>
-      </div>
-
-      <div style={S.tokenList}>
-        {sorted.map((t) => {
-          const live = typeof t.last_price === "number" ? t.last_price : null;
-          const bb = typeof t.best_buy_price === "number" ? t.best_buy_price : null;
-
-          const pct =
-            live != null && bb != null && bb !== 0
-              ? ((live - bb) / bb) * 100
-              : null;
-
-          const pctColor =
-            pct == null ? "#94a3b8" : pct >= 0 ? "#22c55e" : "#ef4444";
-
-          return (
-            <button
-              key={t.id}
-              style={S.tokenItemBtn}
-              onClick={() => jumpToToken(t.id)}
-            >
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                
-                {/* TOKEN NAME + ORDER STATUS */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    /*justifyContent: "space-between",*/
-                    gap: 10,
-                  }}
-                >
-                  <div style={{ fontWeight: 900 }}>{t.symbol}</div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 12,
-                      fontWeight: 900,
-                      padding: "4px 8px",
-                      borderRadius: 999,
-                      border: "1px solid #1f2937",
-                      backgroundColor: t.order_set
-                        ? "rgba(34,197,94,0.15)"
-                        : "rgba(148,163,184,0.12)",
-                      color: t.order_set ? "#22c55e" : "#94a3b8",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    <span>{t.order_set ? "✔" : "⏳"}</span>
-                    <span>{t.order_set ? "gesetzt" : "offen"}</span>
-                  </div>
-                </div>
-
-                {/* INFO ZEILE (UNVERÄNDERT) */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 13,
-                    color: "#94a3b8",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  <span>
-                    Live:{" "}
-                    <b style={{ color: "#e2e8f0" }}>
-                      {t.last_price == null
-                        ? "-"
-                        : t.last_price.toFixed(8)}
-                    </b>
-                  </span>
-
-                  <span>·</span>
-
-                  <span>
-                    BB:{" "}
-                    <b style={{ color: "#e2e8f0" }}>
-                      {t.best_buy_price == null
-                        ? "-"
-                        : t.best_buy_price.toFixed(8)}
-                    </b>
-                  </span>
-
-                  <span>·</span>
-
-                  <span
-                    style={{
-                      fontWeight: 900,
-                      color: pctColor,
-                    }}
-                  >
-                    {pct == null ? "-" : `${pct.toFixed(2)}%`}
-                  </span>
-                </div>
+        {/* ✅ Token-Liste Overlay */}
+        {openTokenList && (
+          <div style={S.overlay} onClick={() => setOpenTokenList(false)}>
+            <div style={S.overlayCard} onClick={(e) => e.stopPropagation()}>
+              <div style={S.overlayTitleRow}>
+                <h3 style={S.overlayTitle}>TOKENS</h3>
+                <button style={S.btnDark} onClick={() => setOpenTokenList(false)}>
+                  Schließen
+                </button>
               </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  </div>
-)}
 
+              <div style={S.tokenList}>
+                {sorted.map((t) => {
+                  const live = typeof t.last_price === "number" ? t.last_price : null;
+                  const bb = typeof t.best_buy_price === "number" ? t.best_buy_price : null;
+
+                  const pct = live != null && bb != null && bb !== 0 ? ((live - bb) / bb) * 100 : null;
+                  const pctColor = pct == null ? "#94a3b8" : pct >= 0 ? "#22c55e" : "#ef4444";
+
+                  return (
+                    <button key={t.id} style={S.tokenItemBtn} onClick={() => jumpToToken(t.id)}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                          }}
+                        >
+                          <div style={{ fontWeight: 900 }}>{t.symbol}</div>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              fontSize: 12,
+                              fontWeight: 900,
+                              padding: "4px 8px",
+                              borderRadius: 999,
+                              border: "1px solid #1f2937",
+                              backgroundColor: t.order_set ? "rgba(34,197,94,0.15)" : "rgba(148,163,184,0.12)",
+                              color: t.order_set ? "#22c55e" : "#94a3b8",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            <span>{t.order_set ? "✔" : "⏳"}</span>
+                            <span>{t.order_set ? "gesetzt" : "offen"}</span>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            fontSize: 13,
+                            color: "#94a3b8",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          <span>
+                            Live:{" "}
+                            <b style={{ color: "#e2e8f0" }}>{t.last_price == null ? "-" : t.last_price.toFixed(8)}</b>
+                          </span>
+
+                          <span>·</span>
+
+                          <span>
+                            BB:{" "}
+                            <b style={{ color: "#e2e8f0" }}>
+                              {t.best_buy_price == null ? "-" : t.best_buy_price.toFixed(8)}
+                            </b>
+                          </span>
+
+                          <span>·</span>
+
+                          <span style={{ fontWeight: 900, color: pctColor }}>{pct == null ? "-" : `${pct.toFixed(2)}%`}</span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ Account löschen Overlay */}
+        {openDeleteAccount && (
+          <div
+            style={S.overlay}
+            onClick={() => {
+              if (!deleteBusy) setOpenDeleteAccount(false);
+            }}
+          >
+            <div style={S.overlayCard} onClick={(e) => e.stopPropagation()}>
+              <div style={S.overlayTitleRow}>
+                <h3 style={S.overlayTitle}>Account endgültig löschen</h3>
+                <button
+                  style={S.btnDark}
+                  disabled={deleteBusy}
+                  onClick={() => {
+                    setOpenDeleteAccount(false);
+                  }}
+                >
+                  Schließen
+                </button>
+              </div>
+
+              <div style={S.dangerHint}>
+                Das löscht deinen Account und alle Daten unwiderruflich.
+              </div>
+
+              <div style={S.miniText}>
+                Tippe <b style={{ color: "#e2e8f0" }}>LÖSCHEN</b>, um zu bestätigen.
+              </div>
+
+              <input
+                style={S.input}
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="LÖSCHEN"
+                disabled={deleteBusy}
+              />
+
+              <div style={{ ...S.row, marginTop: 12 }}>
+                <button
+                  style={S.btnMid}
+                  disabled={deleteBusy}
+                  onClick={() => {
+                    setOpenDeleteAccount(false);
+                  }}
+                >
+                  Abbrechen
+                </button>
+
+                <button
+                  style={{
+                    ...S.btnDanger,
+                    opacity: canDeleteAccount && !deleteBusy ? 1 : 0.6,
+                    cursor: canDeleteAccount && !deleteBusy ? "pointer" : "not-allowed",
+                  }}
+                  disabled={!canDeleteAccount || deleteBusy}
+                  onClick={deleteAccountNow}
+                >
+                  {deleteBusy ? "Lösche…" : "Jetzt endgültig löschen"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
