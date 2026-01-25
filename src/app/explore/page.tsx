@@ -3,65 +3,116 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import PushButton from "@/components/PushButton";
+
+function toNum(v: string): number | null {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  const x = Number(s.replace(",", "."));
+  return Number.isFinite(x) ? x : null;
+}
 
 export default function ExplorePage() {
   const router = useRouter();
+
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // ===== CMC KEY =====
-  const [cmcKey, setCmcKey] = useState("");
-  const [cmcBusy, setCmcBusy] = useState(false);
-  const [hasKey, setHasKey] = useState<boolean | null>(null);
-  const [editingKey, setEditingKey] = useState(false);
+  const [exitNearPct, setExitNearPct] = useState<string>("45");
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
 
   const S: any = {
-    page: { minHeight: "100vh", background: "#0b0f14", padding: 24 },
-    title: { color: "white", fontSize: 26, fontWeight: 900, margin: 0 },
-    card: {
-      border: "1px solid #334155",
-      borderRadius: 16,
-      padding: 16,
-      marginTop: 16,
-      background: "#0b0f14",
+    page: { minHeight: "100vh", backgroundColor: "#020617" },
+    wrap: { maxWidth: 980, margin: "0 auto", padding: 16 },
+
+    top: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+      flexWrap: "wrap",
+      paddingTop: 8,
     },
-    label: { color: "#cbd5e1" },
+    title: { color: "#fff", fontSize: 34, fontWeight: 900, margin: 0, letterSpacing: 0.2 },
+    sub: { color: "#94a3b8", marginTop: 6, fontSize: 14 },
+
+    row: { display: "flex", gap: 10, flexWrap: "wrap" as const, alignItems: "center" },
+
+    btnPrimary: {
+      backgroundColor: "#2563eb",
+      padding: "12px 16px",
+      borderRadius: 14,
+      color: "#fff",
+      border: 0,
+      cursor: "pointer",
+      fontWeight: 900,
+      minWidth: 160,
+    },
+    btnMid: {
+      backgroundColor: "#0f172a",
+      padding: "12px 16px",
+      borderRadius: 14,
+      color: "#fff",
+      border: "1px solid #1f2937",
+      cursor: "pointer",
+      fontWeight: 900,
+      minWidth: 160,
+    },
+    btnDark: {
+      backgroundColor: "#111827",
+      padding: "12px 16px",
+      borderRadius: 14,
+      color: "#fff",
+      border: "1px solid #1f2937",
+      cursor: "pointer",
+      fontWeight: 900,
+      minWidth: 160,
+    },
+
+    card: {
+      marginTop: 18,
+      backgroundColor: "#020617",
+      border: "1px solid rgba(148,163,184,0.35)",
+      borderRadius: 22,
+      padding: 18,
+      boxShadow: "0 0 0 1px rgba(2,6,23,0.1), 0 20px 60px rgba(0,0,0,0.35)",
+    },
+
+    h2: { color: "#fff", fontSize: 22, fontWeight: 900, margin: 0 },
+    p: { color: "#94a3b8", marginTop: 8, lineHeight: 1.6 },
+
+    label: { color: "#cbd5e1", marginTop: 14, fontWeight: 900 },
+    inputRow: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" as const, marginTop: 10 },
     input: {
-      width: "100%",
+      width: 180,
       border: "1px solid #334155",
       borderRadius: 14,
       padding: 14,
       color: "white",
-      background: "#0b0f14",
+      backgroundColor: "#020617",
       outline: "none",
-    },
-    row: { display: "flex", gap: 10, flexWrap: "wrap" as const, marginTop: 12 },
-    btnPrimary: {
-      padding: "12px 14px",
-      borderRadius: 14,
-      background: "#2563eb",
-      color: "white",
-      border: 0,
-      cursor: "pointer",
+      fontSize: 16,
       fontWeight: 900,
     },
-    btnDark: {
-      padding: "12px 14px",
-      borderRadius: 14,
-      background: "#111827",
-      color: "white",
+
+    hint: { color: "#94a3b8", fontWeight: 900, marginTop: 10 },
+    err: { color: "tomato", fontWeight: 900, marginTop: 12 },
+    ok: { color: "#22c55e", fontWeight: 900, marginTop: 12 },
+    pillRow: { display: "flex", gap: 10, flexWrap: "wrap" as const, marginTop: 12 },
+    pill: {
+      backgroundColor: "#0f172a",
       border: "1px solid #1f2937",
+      color: "#fff",
+      padding: "10px 12px",
+      borderRadius: 999,
       cursor: "pointer",
       fontWeight: 900,
     },
-    ok: { color: "#22c55e", fontWeight: 900, fontSize: 16, marginTop: 10 },
-    warn: { color: "#fbbf24", fontWeight: 900, fontSize: 16, marginTop: 10 },
-    err: { color: "tomato", marginTop: 10, fontWeight: 800 },
   };
 
-  async function loadCmcStatus() {
+  async function loadPrefs() {
+    setLoading(true);
     setErr(null);
-    setHasKey(null);
 
     const { data: auth } = await supabase.auth.getUser();
     if (!auth?.user) {
@@ -69,36 +120,28 @@ export default function ExplorePage() {
       return;
     }
 
+    // push_prefs ist optional: wenn kein Row existiert -> fallback 45
     const { data, error } = await supabase
-      .from("user_api_keys")
-      .select("cmc_api_key")
+      .from("push_prefs")
+      .select("exit1_near_pct")
       .eq("user_id", auth.user.id)
       .maybeSingle();
 
     if (error) {
       setErr(error.message);
-      setHasKey(false);
+      setExitNearPct("45");
+      setLoading(false);
       return;
     }
 
-    const key = String(data?.cmc_api_key ?? "").trim();
-    setHasKey(!!key);
+    const v = data?.exit1_near_pct;
+    setExitNearPct(v != null ? String(v) : "45");
+    setLoading(false);
   }
 
-  useEffect(() => {
-    loadCmcStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function saveCmcKey() {
-    const key = cmcKey.trim();
-    if (key.length < 10) {
-      setErr("CMC API Key ungültig.");
-      return;
-    }
-
-    setCmcBusy(true);
+  async function savePrefs() {
     setErr(null);
+    setSavedFlash(false);
 
     const { data: auth } = await supabase.auth.getUser();
     if (!auth?.user) {
@@ -106,105 +149,106 @@ export default function ExplorePage() {
       return;
     }
 
-    const { error } = await supabase
-      .from("user_api_keys")
-      .upsert(
-        { user_id: auth.user.id, cmc_api_key: key },
-        { onConflict: "user_id" }
-      );
-
-    setCmcBusy(false);
-
-    if (error) {
-      setErr(error.message);
+    const v = toNum(exitNearPct);
+    if (v == null) {
+      setErr("Bitte eine Zahl eingeben (z.B. 45).");
+      return;
+    }
+    if (v < 0 || v > 100) {
+      setErr("Bitte einen Wert zwischen 0 und 100 eingeben.");
       return;
     }
 
-    setCmcKey("");
-    setEditingKey(false);
-    loadCmcStatus();
+    setSaving(true);
+
+    const res = await supabase.from("push_prefs").upsert({
+      user_id: auth.user.id,
+      exit1_near_pct: v,
+      updated_at: new Date().toISOString(),
+    });
+
+    setSaving(false);
+
+    if (res.error) {
+      setErr(res.error.message);
+      return;
+    }
+
+    setSavedFlash(true);
+    window.setTimeout(() => setSavedFlash(false), 1200);
   }
+
+  useEffect(() => {
+    loadPrefs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div style={S.page}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={S.title}>Explore</h1>
-        <button style={S.btnDark} onClick={() => router.push("/dashboard")}>
-          Zurück
-        </button>
-      </div>
+      <div style={S.wrap}>
+        <div style={S.top}>
+          <div>
+            <h1 style={S.title}>Explore</h1>
+            <div style={S.sub}>Einstellungen & Tools</div>
+          </div>
 
-      {err && <div style={S.err}>{err}</div>}
-
-      {/* PUSH – nur aktivieren */}
-      <div style={S.card}>
-        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>
-          Push Benachrichtigungen
-        </div>
-        <div style={S.label}>
-          Aktiviert Push für dieses Gerät (Android / iPhone / Desktop).
-        </div>
-
-        <div style={{ marginTop: 12 }}>
-          <PushButton label="Push aktivieren" />
-        </div>
-      </div>
-
-      {/* CMC API KEY */}
-      <div style={S.card}>
-        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>
-          CoinMarketCap API Key
+          <div style={S.row}>
+            <button style={S.btnMid} onClick={() => router.push("/dashboard")}>
+              Dashboard
+            </button>
+            <button style={S.btnDark} onClick={() => router.push("/dashboard")}>
+              Zurück
+            </button>
+          </div>
         </div>
 
-        {hasKey === null && <div style={S.label}>Lade…</div>}
+        {loading && <div style={{ color: "#cbd5e1", marginTop: 16, fontWeight: 900 }}>Lade…</div>}
+        {err && <div style={S.err}>{err}</div>}
 
-        {hasKey === true && !editingKey && (
-          <>
-            <div style={S.ok}>✔ API Key gespeichert</div>
-            <div style={S.row}>
-              <button style={S.btnDark} onClick={() => setEditingKey(true)}>
-                Ändern
-              </button>
-              <button style={S.btnDark} onClick={loadCmcStatus}>
-                Status neu laden
+        {!loading && (
+          <div style={S.card}>
+            <h2 style={S.h2}>Push: Exit 1 „fast erreicht“</h2>
+            <div style={S.p}>
+              Stelle ein, ab welchem Abstand in % unter deinem Exit-1-Ziel du eine Benachrichtigung bekommst.
+              <br />
+              Beispiel: <b>45</b> bedeutet: Push kommt, sobald der Kurs innerhalb von 45% unter dem Ziel liegt.
+            </div>
+
+            <div style={S.label}>Abstand in Prozent (0–100)</div>
+
+            <div style={S.inputRow}>
+              <input
+                style={S.input}
+                value={exitNearPct}
+                onChange={(e) => setExitNearPct(e.target.value)}
+                placeholder="45"
+                inputMode="decimal"
+              />
+
+              <button style={S.btnPrimary} disabled={saving} onClick={savePrefs}>
+                {saving ? "Speichern…" : "Speichern"}
               </button>
             </div>
-          </>
-        )}
 
-        {(hasKey === false || editingKey) && (
-          <>
-            {hasKey === false && <div style={S.warn}>⚠ Kein API Key hinterlegt</div>}
+            <div style={S.hint}>
+              Tipp: Typische Werte sind 10, 20, 30, 45. Je kleiner, desto später/selterner der Push.
+            </div>
 
-            <input
-              style={S.input}
-              placeholder="CMC API Key"
-              value={cmcKey}
-              onChange={(e) => setCmcKey(e.target.value)}
-            />
-
-            <div style={S.row}>
-              <button
-                style={S.btnPrimary}
-                disabled={cmcBusy}
-                onClick={saveCmcKey}
-              >
-                {cmcBusy ? "Speichern…" : "Speichern"}
-              </button>
-
-              {editingKey && (
+            <div style={S.pillRow}>
+              {[10, 20, 30, 45].map((x) => (
                 <button
-                  style={S.btnDark}
-                  onClick={() => {
-                    setEditingKey(false);
-                    setCmcKey("");
-                  }}
+                  key={x}
+                  style={S.pill}
+                  onClick={() => setExitNearPct(String(x))}
+                  title="Setzt nur das Feld, speichert nicht automatisch"
                 >
-                  Abbrechen
+                  {x}%
                 </button>
-              )}
+              ))}
             </div>
-          </>
+
+            {savedFlash && <div style={S.ok}>Gespeichert ✅</div>}
+          </div>
         )}
       </div>
     </div>
