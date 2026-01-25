@@ -29,6 +29,9 @@ type TokenRow = {
   cmc_id?: number | null;
 
   order_set?: boolean | null;
+
+  // ✅ NEU
+  notes?: string | null;
 };
 
 type EntrySuggestion = { name: "EX1" | "EX2" | "EX3"; price: number; pctUnderLive: number };
@@ -152,6 +155,9 @@ export default function DashboardPage() {
   const [exit1, setExit1] = useState("");
 
   const [orderSet, setOrderSet] = useState(false);
+
+  // ✅ NEU: Notizen
+  const [notes, setNotes] = useState("");
 
   const [openEntry, setOpenEntry] = useState<Record<string, boolean>>({});
   const [entryBusy, setEntryBusy] = useState<Record<string, boolean>>({});
@@ -321,6 +327,19 @@ export default function DashboardPage() {
       outline: "none",
       fontSize: 16,
     },
+    textarea: {
+      width: "100%",
+      marginTop: 8,
+      border: "1px solid #334155",
+      borderRadius: 14,
+      padding: 14,
+      color: "white",
+      backgroundColor: "#020617",
+      outline: "none",
+      fontSize: 16,
+      minHeight: 110,
+      resize: "vertical" as const,
+    },
 
     overlay: {
       position: "fixed",
@@ -393,7 +412,7 @@ export default function DashboardPage() {
     const { data, error } = await supabase
       .from("tokens")
       .select(
-        "id,symbol,cmc_id,avg_price,entry_price,best_buy_price,exit1_pct,trend,last_price,last_calc_at,active_entry_label,created_at,ex1_entry,ex2_entry,ex3_entry,ex1_pct,ex2_pct,ex3_pct,order_set"
+        "id,symbol,cmc_id,avg_price,entry_price,best_buy_price,exit1_pct,trend,last_price,last_calc_at,active_entry_label,created_at,ex1_entry,ex2_entry,ex3_entry,ex1_pct,ex2_pct,ex3_pct,order_set,notes"
       )
       .order("symbol", { ascending: true });
 
@@ -449,7 +468,6 @@ export default function DashboardPage() {
       if (error) throw new Error(error.message);
       if (!data?.ok) throw new Error(data?.error ? String(data.error) : "delete-account: Antwort ohne ok=true");
 
-      // nach User-Delete ist die Session sowieso tot – aber sauber:
       await supabase.auth.signOut();
       router.replace("/login");
     } catch (e: any) {
@@ -469,6 +487,7 @@ export default function DashboardPage() {
     setBestBuy("");
     setExit1("");
     setOrderSet(false);
+    setNotes("");
   }
 
   function startAdd() {
@@ -484,6 +503,7 @@ export default function DashboardPage() {
     setBestBuy(t.best_buy_price != null ? String(t.best_buy_price) : "");
     setExit1(t.exit1_pct != null ? String(t.exit1_pct) : "");
     setOrderSet(!!t.order_set);
+    setNotes(String(t.notes ?? ""));
     setErr(null);
 
     setTimeout(() => {
@@ -515,6 +535,7 @@ export default function DashboardPage() {
       best_buy_price: bbN,
       exit1_pct: ex1N,
       order_set: !!orderSet,
+      notes: notes.trim() ? notes.trim() : null,
     };
     if (entryN != null) payload.active_entry_label = "MANUELL";
 
@@ -697,7 +718,6 @@ export default function DashboardPage() {
               Logout
             </button>
 
-            {/* ✅ NEU: Account löschen */}
             <button
               style={S.btnDanger}
               onClick={() => {
@@ -791,6 +811,12 @@ export default function DashboardPage() {
                     <span style={{ ...S.v, color: t.order_set ? "#22c55e" : "#94a3b8" }}>
                       {t.order_set ? "Ja" : "Nein"}
                     </span>
+                  </div>
+
+                  {/* ✅ NEU: Notizen anzeigen */}
+                  <div>
+                    <span style={S.k}>Notizen:</span>{" "}
+                    <span style={S.v}>{String(t.notes ?? "").trim() ? String(t.notes) : "-"}</span>
                   </div>
                 </div>
 
@@ -946,6 +972,15 @@ export default function DashboardPage() {
                       />
                     </div>
 
+                    {/* ✅ NEU: Notizen editieren */}
+                    <div style={S.label}>Notizen</div>
+                    <textarea
+                      style={S.textarea}
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="z.B. warum gekauft, Plan, Risiko, News, etc."
+                    />
+
                     <div style={{ ...S.row, marginTop: 12 }}>
                       <button style={S.btnPrimary} disabled={saving} onClick={saveTokenInline}>
                         {saving ? "Speichern…" : "Speichern"}
@@ -1023,17 +1058,14 @@ export default function DashboardPage() {
                           }}
                         >
                           <span>
-                            Live:{" "}
-                            <b style={{ color: "#e2e8f0" }}>{t.last_price == null ? "-" : t.last_price.toFixed(8)}</b>
+                            Live: <b style={{ color: "#e2e8f0" }}>{t.last_price == null ? "-" : t.last_price.toFixed(8)}</b>
                           </span>
 
                           <span>·</span>
 
                           <span>
                             BB:{" "}
-                            <b style={{ color: "#e2e8f0" }}>
-                              {t.best_buy_price == null ? "-" : t.best_buy_price.toFixed(8)}
-                            </b>
+                            <b style={{ color: "#e2e8f0" }}>{t.best_buy_price == null ? "-" : t.best_buy_price.toFixed(8)}</b>
                           </span>
 
                           <span>·</span>
@@ -1071,9 +1103,7 @@ export default function DashboardPage() {
                 </button>
               </div>
 
-              <div style={S.dangerHint}>
-                Das löscht deinen Account und alle Daten unwiderruflich.
-              </div>
+              <div style={S.dangerHint}>Das löscht deinen Account und alle Daten unwiderruflich.</div>
 
               <div style={S.miniText}>
                 Tippe <b style={{ color: "#e2e8f0" }}>LÖSCHEN</b>, um zu bestätigen.
