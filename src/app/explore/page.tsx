@@ -22,7 +22,7 @@ export default function ExplorePage() {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [editingKey, setEditingKey] = useState(false);
 
-  // ===== PUSH PREFS: Exit1 Near % =====
+  // ===== PUSH PREFS =====
   const [exitNearPct, setExitNearPct] = useState("45");
   const [prefsBusy, setPrefsBusy] = useState(false);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
@@ -39,18 +39,24 @@ export default function ExplorePage() {
       background: "#0b0f14",
     },
     label: { color: "#cbd5e1" },
+    hint: { color: "#94a3b8", marginTop: 10, fontWeight: 700, lineHeight: 1.5 },
+
     input: {
       width: "100%",
-      border: "1px solid #334155",
-      borderRadius: 14,
-      padding: 14,
-      color: "white",
-      background: "#0b0f14",
-      outline: "none",
-    },
-    row: { display: "flex", gap: 10, flexWrap: "wrap" as const, marginTop: 12 },
-    btnPrimary: {
+      border: "1px solid #1f2937",
+      borderRadius: 12,
       padding: "12px 14px",
+      color: "white",
+      background: "#020617",
+      outline: "none",
+      fontWeight: 800,
+      fontSize: 16,
+    },
+
+    row: { display: "flex", gap: 10, flexWrap: "wrap" as const, marginTop: 12 },
+
+    btnPrimary: {
+      padding: "12px 16px",
       borderRadius: 14,
       background: "#2563eb",
       color: "white",
@@ -59,7 +65,7 @@ export default function ExplorePage() {
       fontWeight: 900,
     },
     btnDark: {
-      padding: "12px 14px",
+      padding: "12px 16px",
       borderRadius: 14,
       background: "#111827",
       color: "white",
@@ -68,19 +74,19 @@ export default function ExplorePage() {
       fontWeight: 900,
     },
     btnPill: {
-      padding: "10px 12px",
+      padding: "10px 14px",
       borderRadius: 999,
       background: "#111827",
       color: "white",
       border: "1px solid #1f2937",
       cursor: "pointer",
       fontWeight: 900,
-      fontSize: 13,
+      fontSize: 14,
     },
+
     ok: { color: "#22c55e", fontWeight: 900, fontSize: 16, marginTop: 10 },
     warn: { color: "#fbbf24", fontWeight: 900, fontSize: 16, marginTop: 10 },
     err: { color: "tomato", marginTop: 10, fontWeight: 800 },
-    hint: { color: "#94a3b8", marginTop: 10, fontWeight: 800, lineHeight: 1.5 },
   };
 
   async function loadCmcStatus() {
@@ -88,10 +94,7 @@ export default function ExplorePage() {
     setHasKey(null);
 
     const { data: auth } = await supabase.auth.getUser();
-    if (!auth?.user) {
-      router.replace("/login");
-      return;
-    }
+    if (!auth?.user) return router.replace("/login");
 
     const { data, error } = await supabase
       .from("user_api_keys")
@@ -105,59 +108,42 @@ export default function ExplorePage() {
       return;
     }
 
-    const key = String(data?.cmc_api_key ?? "").trim();
-    setHasKey(!!key);
+    setHasKey(!!String(data?.cmc_api_key ?? "").trim());
   }
 
   async function loadPushPrefs() {
     setErr(null);
 
     const { data: auth } = await supabase.auth.getUser();
-    if (!auth?.user) {
-      router.replace("/login");
-      return;
-    }
+    if (!auth?.user) return router.replace("/login");
 
-    // Row kann fehlen -> fallback 45
     const { data, error } = await supabase
       .from("push_prefs")
       .select("exit1_near_pct")
       .eq("user_id", auth.user.id)
       .maybeSingle();
 
-    if (error) {
-      setErr(error.message);
-      setExitNearPct("45");
-      setPrefsLoaded(true);
-      return;
+    if (!error && data?.exit1_near_pct != null) {
+      setExitNearPct(String(data.exit1_near_pct));
     }
 
-    const v = data?.exit1_near_pct;
-    setExitNearPct(v != null ? String(v) : "45");
     setPrefsLoaded(true);
   }
 
   useEffect(() => {
     loadCmcStatus();
     loadPushPrefs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function saveCmcKey() {
     const key = cmcKey.trim();
-    if (key.length < 10) {
-      setErr("CMC API Key ungültig.");
-      return;
-    }
+    if (key.length < 10) return setErr("CMC API Key ungültig.");
 
     setCmcBusy(true);
     setErr(null);
 
     const { data: auth } = await supabase.auth.getUser();
-    if (!auth?.user) {
-      router.replace("/login");
-      return;
-    }
+    if (!auth?.user) return router.replace("/login");
 
     const { error } = await supabase
       .from("user_api_keys")
@@ -165,10 +151,7 @@ export default function ExplorePage() {
 
     setCmcBusy(false);
 
-    if (error) {
-      setErr(error.message);
-      return;
-    }
+    if (error) return setErr(error.message);
 
     setCmcKey("");
     setEditingKey(false);
@@ -180,22 +163,14 @@ export default function ExplorePage() {
     setPrefsOkFlash(false);
 
     const v = toNum(exitNearPct);
-    if (v == null) {
-      setErr("Bitte eine Zahl für den Push-Abstand eingeben (z.B. 45).");
-      return;
-    }
-    if (v < 0 || v > 100) {
-      setErr("Push-Abstand muss zwischen 0 und 100 liegen.");
-      return;
+    if (v == null || v < 0 || v > 100) {
+      return setErr("Bitte einen Wert zwischen 0 und 100 eingeben.");
     }
 
     setPrefsBusy(true);
 
     const { data: auth } = await supabase.auth.getUser();
-    if (!auth?.user) {
-      router.replace("/login");
-      return;
-    }
+    if (!auth?.user) return router.replace("/login");
 
     const { error } = await supabase
       .from("push_prefs")
@@ -206,13 +181,10 @@ export default function ExplorePage() {
 
     setPrefsBusy(false);
 
-    if (error) {
-      setErr(error.message);
-      return;
-    }
+    if (error) return setErr(error.message);
 
     setPrefsOkFlash(true);
-    window.setTimeout(() => setPrefsOkFlash(false), 1200);
+    setTimeout(() => setPrefsOkFlash(false), 1200);
   }
 
   return (
@@ -226,40 +198,40 @@ export default function ExplorePage() {
 
       {err && <div style={S.err}>{err}</div>}
 
-      {/* PUSH – nur aktivieren */}
+      {/* PUSH */}
       <div style={S.card}>
-        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>Push Benachrichtigungen</div>
-        <div style={S.label}>Aktiviert Push für dieses Gerät (Android / iPhone / Desktop).</div>
-
+        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>
+          Push Benachrichtigungen
+        </div>
+        <div style={S.label}>Aktiviert Push für dieses Gerät.</div>
         <div style={{ marginTop: 12 }}>
           <PushButton label="Push aktivieren" />
         </div>
       </div>
 
-      {/* PUSH PREFS: Exit1 Near % */}
+      {/* PUSH PREFS */}
       <div style={S.card}>
-        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>Push Schwelle: Exit 1 „fast erreicht“</div>
-        <div style={S.label}>Ab welchem Abstand in % unter deinem Exit-1-Ziel soll der Push kommen?</div>
+        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>
+          Push Schwelle: Exit 1 „fast erreicht“
+        </div>
 
-        {!prefsLoaded && <div style={{ ...S.label, marginTop: 10 }}>Lade…</div>}
+        <div style={S.label}>
+          Ab welchem Abstand in % unter deinem Exit-1-Ziel soll der Push kommen?
+        </div>
 
         {prefsLoaded && (
           <>
             <div style={S.hint}>
-              Beispiel: <b>45</b> = Push kommt, wenn der Kurs innerhalb von 45% unter dem Exit-1-Ziel liegt. Kleinere
-              Werte = später/selterner.
+              Beispiel: <b>45</b> → Push kommt, wenn der Kurs innerhalb von 45 % unter
+              dem Exit-1-Ziel liegt.
             </div>
 
-            <div style={{ marginTop: 12 }}>
-              <div style={{ ...S.label, marginBottom: 8 }}>Abstand in % (0–100)</div>
-              <input
-                style={S.input}
-                placeholder="45"
-                value={exitNearPct}
-                onChange={(e) => setExitNearPct(e.target.value)}
-                inputMode="decimal"
-              />
-            </div>
+            <input
+              style={{ ...S.input, marginTop: 12 }}
+              value={exitNearPct}
+              onChange={(e) => setExitNearPct(e.target.value)}
+              inputMode="decimal"
+            />
 
             <div style={S.row}>
               {[10, 20, 30, 45].map((x) => (
@@ -271,10 +243,6 @@ export default function ExplorePage() {
               <button style={S.btnPrimary} disabled={prefsBusy} onClick={savePushPrefs}>
                 {prefsBusy ? "Speichern…" : "Speichern"}
               </button>
-
-              <button style={S.btnDark} disabled={prefsBusy} onClick={loadPushPrefs}>
-                Neu laden
-              </button>
             </div>
 
             {prefsOkFlash && <div style={S.ok}>✔ gespeichert</div>}
@@ -284,9 +252,9 @@ export default function ExplorePage() {
 
       {/* CMC API KEY */}
       <div style={S.card}>
-        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>CoinMarketCap API Key</div>
-
-        {hasKey === null && <div style={S.label}>Lade…</div>}
+        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>
+          CoinMarketCap API Key
+        </div>
 
         {hasKey === true && !editingKey && (
           <>
@@ -294,9 +262,6 @@ export default function ExplorePage() {
             <div style={S.row}>
               <button style={S.btnDark} onClick={() => setEditingKey(true)}>
                 Ändern
-              </button>
-              <button style={S.btnDark} onClick={loadCmcStatus}>
-                Status neu laden
               </button>
             </div>
           </>
@@ -306,7 +271,12 @@ export default function ExplorePage() {
           <>
             {hasKey === false && <div style={S.warn}>⚠ Kein API Key hinterlegt</div>}
 
-            <input style={S.input} placeholder="CMC API Key" value={cmcKey} onChange={(e) => setCmcKey(e.target.value)} />
+            <input
+              style={S.input}
+              placeholder="CMC API Key"
+              value={cmcKey}
+              onChange={(e) => setCmcKey(e.target.value)}
+            />
 
             <div style={S.row}>
               <button style={S.btnPrimary} disabled={cmcBusy} onClick={saveCmcKey}>
