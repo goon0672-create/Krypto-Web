@@ -138,6 +138,25 @@ function fgiLabelAndInvestPct(value: number | null | undefined, classification: 
   return { phase, investText, color };
 }
 
+/** ✅ Zielkurs berechnen für Exit 1:
+ *  Basis: best_buy_price > entry_price > avg_price
+ *  Ziel: base * (1 + exit1_pct/100)
+ */
+function calcExitTarget(t: TokenRow): number | null {
+  const pct = typeof t.exit1_pct === "number" && Number.isFinite(t.exit1_pct) ? t.exit1_pct : null;
+  if (pct == null) return null;
+
+  const base =
+    (typeof t.best_buy_price === "number" && Number.isFinite(t.best_buy_price) ? t.best_buy_price : null) ??
+    (typeof t.entry_price === "number" && Number.isFinite(t.entry_price) ? t.entry_price : null) ??
+    (typeof t.avg_price === "number" && Number.isFinite(t.avg_price) ? t.avg_price : null);
+
+  if (base == null) return null;
+
+  const target = base * (1 + pct / 100);
+  return Number.isFinite(target) ? target : null;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -753,6 +772,9 @@ export default function DashboardPage() {
 
             const isFlash = flashId === t.id;
 
+            // ✅ NEU: Exit-1 Zielkurs berechnen
+            const exitTarget = calcExitTarget(t);
+
             return (
               <div
                 key={t.id}
@@ -798,10 +820,19 @@ export default function DashboardPage() {
                     </span>
                   </div>
 
+                  {/* ✅ Exit 1 + Zielkurs */}
                   <div>
                     <span style={S.k}>Exit 1:</span>{" "}
-                    <span style={S.v}>{t.exit1_pct == null ? "-" : fmtPctSigned(t.exit1_pct, 2)}</span>
+                    <span style={S.v}>
+                      {t.exit1_pct == null ? "-" : fmtPctSigned(t.exit1_pct, 2)}
+                      {exitTarget != null && (
+                        <span style={{ marginLeft: 12, color: "#93a4be", fontWeight: 900 }}>
+                          → Zielkurs {fmtSmart(exitTarget)}
+                        </span>
+                      )}
+                    </span>
                   </div>
+
                   <div>
                     <span style={S.k}>Trend:</span> <span style={S.v}>{t.trend ?? "-"}</span>
                   </div>
@@ -813,7 +844,7 @@ export default function DashboardPage() {
                     </span>
                   </div>
 
-                  {/* ✅ NEU: Notizen anzeigen */}
+                  {/* ✅ Notizen anzeigen */}
                   <div>
                     <span style={S.k}>Notizen:</span>{" "}
                     <span style={S.v}>{String(t.notes ?? "").trim() ? String(t.notes) : "-"}</span>
@@ -972,7 +1003,7 @@ export default function DashboardPage() {
                       />
                     </div>
 
-                    {/* ✅ NEU: Notizen editieren */}
+                    {/* ✅ Notizen editieren */}
                     <div style={S.label}>Notizen</div>
                     <textarea
                       style={S.textarea}
@@ -997,89 +1028,126 @@ export default function DashboardPage() {
         </div>
 
         {/* ✅ Token-Liste Overlay */}
-        {openTokenList && (
-          <div style={S.overlay} onClick={() => setOpenTokenList(false)}>
-            <div style={S.overlayCard} onClick={(e) => e.stopPropagation()}>
-              <div style={S.overlayTitleRow}>
-                <h3 style={S.overlayTitle}>TOKENS</h3>
-                <button style={S.btnDark} onClick={() => setOpenTokenList(false)}>
-                  Schließen
-                </button>
+      {/* ✅ Token-Liste Overlay */}
+{openTokenList && (
+  <div style={S.overlay} onClick={() => setOpenTokenList(false)}>
+    <div style={S.overlayCard} onClick={(e) => e.stopPropagation()}>
+      <div style={S.overlayTitleRow}>
+        <h3 style={S.overlayTitle}>TOKENS</h3>
+        <button style={S.btnDark} onClick={() => setOpenTokenList(false)}>
+          Schließen
+        </button>
+      </div>
+
+      <div style={S.tokenList}>
+        {sorted.map((t) => {
+          const live = typeof t.last_price === "number" ? t.last_price : null;
+          const bb = typeof t.best_buy_price === "number" ? t.best_buy_price : null;
+
+          const pct = live != null && bb != null && bb !== 0 ? ((live - bb) / bb) * 100 : null;
+          const pctColor = pct == null ? "#94a3b8" : pct >= 0 ? "#22c55e" : "#ef4444";
+
+          // ✅ Exit-1 Zielkurs
+          const exitTarget = calcExitTarget(t);
+
+          return (
+            <button key={t.id} style={S.tokenItemBtn} onClick={() => jumpToToken(t.id)}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {/* Kopfzeile */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ fontWeight: 900 }}>{t.symbol}</div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 12,
+                      fontWeight: 900,
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      border: "1px solid #1f2937",
+                      backgroundColor: t.order_set ? "rgba(34,197,94,0.15)" : "rgba(148,163,184,0.12)",
+                      color: t.order_set ? "#22c55e" : "#94a3b8",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <span>{t.order_set ? "✔" : "⏳"}</span>
+                    <span>{t.order_set ? "gesetzt" : "offen"}</span>
+                  </div>
+                </div>
+
+                {/* Zeile: Live/BB/% */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 13,
+                    color: "#94a3b8",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span>
+                    Live:{" "}
+                    <b style={{ color: "#e2e8f0" }}>
+                      {t.last_price == null ? "-" : t.last_price.toFixed(8)}
+                    </b>
+                  </span>
+
+                  <span>·</span>
+
+                  <span>
+                    BB:{" "}
+                    <b style={{ color: "#e2e8f0" }}>
+                      {t.best_buy_price == null ? "-" : t.best_buy_price.toFixed(8)}
+                    </b>
+                  </span>
+
+                  <span>·</span>
+
+                  <span style={{ fontWeight: 900, color: pctColor }}>
+                    {pct == null ? "-" : `${pct.toFixed(2)}%`}
+                  </span>
+                </div>
+
+                {/* ✅ NEU: Exit 1 + Zielkurs */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 13,
+                    color: "#94a3b8",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span>
+                    Exit 1:{" "}
+                    <b style={{ color: "#e2e8f0" }}>
+                      {t.exit1_pct == null ? "-" : fmtPctSigned(t.exit1_pct, 2)}
+                    </b>
+                  </span>
+
+                  {exitTarget != null && (
+                    <>
+                      <span>·</span>
+                      <span>
+                        Zielkurs:{" "}
+                        <b style={{ color: "#e2e8f0" }}>{fmtSmart(exitTarget)}</b>
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  </div>
+)}
 
-              <div style={S.tokenList}>
-                {sorted.map((t) => {
-                  const live = typeof t.last_price === "number" ? t.last_price : null;
-                  const bb = typeof t.best_buy_price === "number" ? t.best_buy_price : null;
-
-                  const pct = live != null && bb != null && bb !== 0 ? ((live - bb) / bb) * 100 : null;
-                  const pctColor = pct == null ? "#94a3b8" : pct >= 0 ? "#22c55e" : "#ef4444";
-
-                  return (
-                    <button key={t.id} style={S.tokenItemBtn} onClick={() => jumpToToken(t.id)}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                          }}
-                        >
-                          <div style={{ fontWeight: 900 }}>{t.symbol}</div>
-
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 6,
-                              fontSize: 12,
-                              fontWeight: 900,
-                              padding: "4px 8px",
-                              borderRadius: 999,
-                              border: "1px solid #1f2937",
-                              backgroundColor: t.order_set ? "rgba(34,197,94,0.15)" : "rgba(148,163,184,0.12)",
-                              color: t.order_set ? "#22c55e" : "#94a3b8",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            <span>{t.order_set ? "✔" : "⏳"}</span>
-                            <span>{t.order_set ? "gesetzt" : "offen"}</span>
-                          </div>
-                        </div>
-
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            fontSize: 13,
-                            color: "#94a3b8",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          <span>
-                            Live: <b style={{ color: "#e2e8f0" }}>{t.last_price == null ? "-" : t.last_price.toFixed(8)}</b>
-                          </span>
-
-                          <span>·</span>
-
-                          <span>
-                            BB:{" "}
-                            <b style={{ color: "#e2e8f0" }}>{t.best_buy_price == null ? "-" : t.best_buy_price.toFixed(8)}</b>
-                          </span>
-
-                          <span>·</span>
-
-                          <span style={{ fontWeight: 900, color: pctColor }}>{pct == null ? "-" : `${pct.toFixed(2)}%`}</span>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* ✅ Account löschen Overlay */}
         {openDeleteAccount && (
