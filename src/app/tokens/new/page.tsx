@@ -23,6 +23,9 @@ export default function NewTokenPage() {
   const [bestBuy, setBestBuy] = useState("");
   const [exit1, setExit1] = useState("");
 
+  // ✅ NEU: Notizen
+  const [notes, setNotes] = useState("");
+
   // CMC mapping
   const [cmcId, setCmcId] = useState<number | null>(null);
   const [cmcCandidates, setCmcCandidates] = useState<any[]>([]);
@@ -161,6 +164,9 @@ export default function NewTokenPage() {
     const bestBuyNum = parseNum(bestBuy);
     const exit1Num = parseNum(exit1);
 
+    const notesTxt = notes.trim();
+    const notesVal = notesTxt ? notesTxt : null;
+
     setBusy(true);
 
     try {
@@ -175,6 +181,9 @@ export default function NewTokenPage() {
         last_calc_at: null,
         last_price: null,
         active_entry_label: entryNum != null ? "MANUELL" : null,
+
+        // ✅ NEU
+        notes: notesVal,
       };
 
       const ins = await supabase.from("tokens").insert(payload).select("id,symbol,cmc_id").single();
@@ -204,7 +213,6 @@ export default function NewTokenPage() {
       }
 
       // 3) ✅ Trend + Entry1/2/3 sofort berechnen lassen (schreibt in DB)
-      //    Das ist genau dein gewünschtes Verhalten.
       await runEntryCalc(sym);
 
       router.replace("/dashboard");
@@ -258,8 +266,7 @@ export default function NewTokenPage() {
               >
                 {cmcCandidates.map((c: any) => (
                   <option key={c.id} value={c.id}>
-                    #{c.rank ?? "-"} · {c.symbol} · {c.name} · {c.slug} · id:{c.id} ·{" "}
-                    {c.is_active ? "active" : "inactive"}
+                    #{c.rank ?? "-"} · {c.symbol} · {c.name} · {c.slug} · id:{c.id} · {c.is_active ? "active" : "inactive"}
                   </option>
                 ))}
               </select>
@@ -308,9 +315,25 @@ export default function NewTokenPage() {
             placeholder="z.B. 25"
             style={{ width: "100%", padding: 14, borderRadius: 12 }}
           />
-          <div style={{ opacity: 0.75, marginTop: 6 }}>
-            Eingabe: 25 → gespeichert als 25 → Anzeige im Dashboard: +25%
-          </div>
+          <div style={{ opacity: 0.75, marginTop: 6 }}>Eingabe: 25 → gespeichert als 25 → Anzeige im Dashboard: +25%</div>
+        </div>
+
+        {/* ✅ NEU: Notizen */}
+        <div>
+          <div style={{ opacity: 0.85, marginBottom: 6 }}>Notizen – optional</div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="z.B. warum gekauft, Plan, Risiko, News…"
+            style={{
+              width: "100%",
+              padding: 14,
+              borderRadius: 12,
+              minHeight: 120,
+              resize: "vertical",
+              fontFamily: "inherit",
+            }}
+          />
         </div>
 
         <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
