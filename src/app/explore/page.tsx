@@ -32,7 +32,7 @@ export default function ExplorePage() {
     label: { color: "#cbd5e1", marginTop: 6 },
     input: {
       width: "100%",
-      boxSizing: "border-box", // ✅ wichtig – verhindert Überstehen
+      boxSizing: "border-box",
       border: "1px solid #1f2937",
       borderRadius: 12,
       padding: "12px 14px",
@@ -84,14 +84,37 @@ export default function ExplorePage() {
       return;
     }
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("push_prefs")
       .select("exit_near_pct")
       .eq("user_id", auth.user.id)
       .maybeSingle();
 
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
     if (data?.exit_near_pct != null) {
       setExitNearPct(String(data.exit_near_pct));
+    }
+  }
+
+  // ✅ Reset push_events für EXIT1_NEAR (damit neue Schwelle sofort gilt)
+  async function resetExitNearEvents(userId: string) {
+    const { error } = await supabase
+      .from("push_events")
+      .update({
+        active: false,
+        cooldown_until: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", userId)
+      .eq("kind", "EXIT1_NEAR");
+
+    if (error) {
+      // nicht fatal, aber du willst es sehen
+      setErr((prev) => prev ?? `Reset push_events fehlgeschlagen: ${error.message}`);
     }
   }
 
@@ -111,16 +134,26 @@ export default function ExplorePage() {
       return;
     }
 
+    // 1) Pref speichern
     const { error } = await supabase.from("push_prefs").upsert(
       {
         user_id: auth.user.id,
         exit_near_pct: v,
+        updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id" }
     );
 
+    if (error) {
+      setPrefsBusy(false);
+      setErr(error.message);
+      return;
+    }
+
+    // 2) ✅ EXIT1_NEAR State resetten, damit Schwellenänderung sofort greift
+    await resetExitNearEvents(auth.user.id);
+
     setPrefsBusy(false);
-    if (error) setErr(error.message);
   }
 
   // ===== LOAD CMC STATUS =====
@@ -167,7 +200,7 @@ export default function ExplorePage() {
     }
 
     const { error } = await supabase.from("user_api_keys").upsert(
-      { user_id: auth.user.id, cmc_api_key: key },
+      { user_id: auth.user.id, cmc_api_key: key, updated_at: new Date().toISOString() },
       { onConflict: "user_id" }
     );
 
@@ -198,12 +231,8 @@ export default function ExplorePage() {
 
       {/* PUSH AKTIVIEREN */}
       <div style={S.card}>
-        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>
-          Push Benachrichtigungen
-        </div>
-        <div style={S.label}>
-          Aktiviert Push für dieses Gerät (Android / iPhone / Desktop).
-        </div>
+        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>Push Benachrichtigungen</div>
+        <div style={S.label}>Aktiviert Push für dieses Gerät (Android / iPhone / Desktop).</div>
         <div style={{ marginTop: 12 }}>
           <PushButton label="Push aktivieren" />
         </div>
@@ -211,28 +240,20 @@ export default function ExplorePage() {
 
       {/* PUSH SCHWELLE */}
       <div style={S.card}>
-        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>
-          Push Schwelle: Exit 1 „fast erreicht“
-        </div>
-        <div style={S.label}>
-          Abstand in % unter deinem Exit-1-Ziel.
-        </div>
+        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>Push Schwelle: Exit 1 „fast erreicht“</div>
+        <div style={S.label}>Abstand in % unter deinem Exit-1-Ziel.</div>
 
         <input
           style={{ ...S.input, marginTop: 12 }}
           value={exitNearPct}
           onChange={(e) => setExitNearPct(e.target.value)}
           inputMode="numeric"
-          placeholder="z.B. 45"
+          placeholder="z.B. 20"
         />
 
         <div style={S.row}>
           {[10, 20, 30, 45].map((x) => (
-            <button
-              key={x}
-              style={S.btnPill}
-              onClick={() => setExitNearPct(String(x))}
-            >
+            <button key={x} style={S.btnPill} onClick={() => setExitNearPct(String(x))}>
               {x}%
             </button>
           ))}
@@ -241,13 +262,15 @@ export default function ExplorePage() {
             {prefsBusy ? "Speichern…" : "Speichern"}
           </button>
         </div>
+
+        <div style={S.label}>
+          Hinweis: Beim Speichern wird der Status für <b>EXIT1_NEAR</b> zurückgesetzt, damit die neue Schwelle sofort greift.
+        </div>
       </div>
 
       {/* CMC API KEY */}
       <div style={S.card}>
-        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>
-          CoinMarketCap API Key
-        </div>
+        <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>CoinMarketCap API Key</div>
 
         {hasKey === null && <div style={S.label}>Lade…</div>}
 
